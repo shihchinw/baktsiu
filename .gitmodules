@@ -1,0 +1,9 @@
+[submodule "ext/glfw"]
+	path = ext/glfw
+	url = https://github.com/glfw/glfw.git
+[submodule "ext/openexr"]
+	path = ext/openexr
+	url = https://github.com/AcademySoftwareFoundation/openexr.git
+[submodule "ext/zlib"]
+	path = ext/zlib
+	url = https://github.com/madler/zlib.git

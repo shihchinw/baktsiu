@@ -1,0 +1,1763 @@
+﻿#define IMGUI_DEFINE_MATH_OPERATORS
+#include <icons_font_awesome5.h>
+#include "imgui.h"
+#include "imgui_internal.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+
+#pragma warning(push)
+#pragma warning(disable: 4819)
+#include "portable_file_dialogs.h"      // File dialogs.
+
+#include <GL/gl3w.h>    // Initialize with gl3wInit()
+#include <GLFW/glfw3.h>
+#pragma warning(pop)
+
+#include <fstream>
+
+#include <stb_image.h>
+
+#define STB_TRUETYPE_IMPLEMENTATION
+#include <stb_truetype.h>
+
+#include "app.h"
+#include "colour.h"
+#include "resources.h"
+
+#ifdef EMBED_SHADERS
+#include "shader_resources.h"
+#define INIT_SHADER(shader, name, vtxName, fragName)\
+shader.init(name, vtxName##_vert, fragName##_frag)
+#else
+#define STRING(s) #s
+#define INIT_SHADER(shader, name, vtxName, fragName)\
+shader.initFromFiles(name, "shaders/"##STRING(vtxName)##".vert", "shaders/"##STRING(fragName)##".frag")
+#endif
+
+namespace
+{
+
+// See more implementations about toggle button https://github.com/ocornut/imgui/issues/1537
+bool ToggleButton(const char* label, bool* value, const ImVec2 &size = ImVec2(0, 0), bool enable = true)
+{
+    bool valueChanged = false;
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+
+    if (*value) {
+        ImGui::PushStyleColor(ImGuiCol_Button, g.Style.Colors[ImGuiCol_ButtonActive]);
+        
+        if (ImGui::Button(label, size)) {
+            *value ^= true;
+            valueChanged = true;
+        }
+
+        ImGui::PopStyleColor(1);
+        return valueChanged;
+    }
+
+    if (!enable) {
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, g.Style.Colors[ImGuiCol_Button]);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, g.Style.Colors[ImGuiCol_Button]);
+    }
+
+    if (ImGui::Button(label, size) && enable) {
+        *value = true;
+        valueChanged = true;
+    }
+
+    if (!enable) {
+        ImGui::PopStyleColor(2);
+    }
+
+    return valueChanged;
+}
+
+bool Splitter(bool split_vertically, float thickness, float* size1, float* size2, float min_size1, float min_size2, float splitter_long_axis_size = -1.0f)
+{
+    using namespace ImGui;
+    ImGuiContext& g = *GImGui;
+    ImGuiWindow* window = g.CurrentWindow;
+    ImGuiID id = window->GetID("##Splitter");
+    ImRect bb;
+    bb.Min = window->DC.CursorPos + (split_vertically ? ImVec2(*size1, 0.0f) : ImVec2(0.0f, *size1));
+    bb.Max = bb.Min + CalcItemSize(split_vertically ? ImVec2(thickness, splitter_long_axis_size) : ImVec2(splitter_long_axis_size, thickness), 0.0f, 0.0f);
+    return SplitterBehavior(bb, id, split_vertically ? ImGuiAxis_X : ImGuiAxis_Y, size1, size2, min_size1, min_size2, 0.0f);
+}
+
+}  // namespace anonymous
+
+
+namespace baktsiu
+{
+
+const char* App::kImagePropWindowName = "ImagePropWindow";
+const char* App::kImageRemoveDlgTitle = "Bak Tsiu##RemoveImage";
+const char* App::kClearImagesDlgTitle = "Bak Tsiu##ClearImageLayers";
+
+// Return UV BBox of given character in font texture.
+inline Vec4f getCharUvRange(const stbtt_bakedchar& ch, float mapWidth)
+{
+    return Vec4f(ch.x0, ch.y0, ch.x1, ch.y1) / mapWidth;
+}
+
+// Return UV offset of given character in font texture.
+inline Vec4f getCharUvXform(const stbtt_bakedchar& ch, float charHeight)
+{
+    Vec4f xform;
+    xform.x = (ch.x1 - ch.x0) / ch.xadvance;
+    xform.y = (ch.y1 - ch.y0) / charHeight;
+    xform.z = ch.xoff / ch.xadvance;
+
+    // The bitmap is baked upside down. For each char, the yoff is the value from 
+    // image bottom to the baseline pixel. Ex. if yoff is -7, means the baseline
+    // is at +7 pixels in y-axis. To compute the offset uv coordinates within
+    // that char only, we calculate the pixels number from char bottom to baseline
+    // which is (charHeight + ch.yoff), then divide by charHeight to compute the
+    // normalized uv coordinates.
+    xform.w = (charHeight + ch.yoff) / charHeight;
+    return xform;
+}
+
+
+void    App::setThemeColors()
+{
+    ImGui::StyleColorsDark();
+    ImVec4* colors = ImGui::GetStyle().Colors;
+
+    colors[ImGuiCol_WindowBg] = ImVec4(0.184f, 0.184f, 0.184f, 1.0f);
+    colors[ImGuiCol_MenuBarBg] = colors[ImGuiCol_WindowBg];
+
+    colors[ImGuiCol_FrameBg] = ImVec4(0.187f, 0.321f, 0.418f, 1.0f);
+    colors[ImGuiCol_FrameBgActive] = ImVec4(0.288f, 0.485f, 0.637f, 1.0f);
+    colors[ImGuiCol_ButtonHovered] = ImVec4(0.137f, 0.663f, 0.812f, 0.75f);
+    colors[ImGuiCol_ButtonActive] = ImVec4(0.0f, 0.439f, 0.702f, 0.965f);
+
+    colors[ImGuiCol_TitleBgActive] = ImVec4(0.0f, 0.439f, 0.702f, 1.0f);
+    colors[ImGuiCol_Header] = ImVec4(0.0f, 0.439f, 0.702f, 0.5f);
+    colors[ImGuiCol_HeaderActive] = colors[ImGuiCol_ButtonActive];
+    colors[ImGuiCol_HeaderHovered] = colors[ImGuiCol_ButtonHovered];
+    
+    colors[ImGuiCol_TabActive] = colors[ImGuiCol_ButtonActive];
+    colors[ImGuiCol_TabHovered] = colors[ImGuiCol_ButtonHovered];
+
+    colors[ImGuiCol_SeparatorActive] = ImVec4(0.0f, 0.439f, 0.702f, 0.8f);
+    colors[ImGuiCol_SeparatorHovered] = ImVec4(0.137f, 0.663f, 0.812f, 0.8f);
+    colors[ImGuiCol_SliderGrab] = colors[ImGuiCol_ButtonActive];
+    colors[ImGuiCol_SliderGrabActive] = colors[ImGuiCol_ButtonHovered];
+}
+
+
+bool App::initialize(const char* title, int width, int height)
+{
+    glfwSetErrorCallback([](int error, const char* description) {
+        std::cerr << "GLFW error " << error << ": " << description << std::endl;
+    });
+
+    if (!glfwInit()) {
+        return false;
+    }
+
+    // Decide GL+GLSL versions
+#if __APPLE__
+    // GL 3.2 + GLSL 150
+    const char* glsl_version = "#version 150";
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // Required on Mac
+#else
+    // GL 3.0 + GLSL 130
+    const char* glsl_version = "#version 130";
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+    //glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
+    //glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
+    //glfwWindowHint(GLFW_DECORATED, false);
+    glfwWindowHint(GLFW_SRGB_CAPABLE, GL_FALSE);
+#endif
+
+    // Create window with graphics context
+    mWindow = glfwCreateWindow(width, height, title, nullptr, nullptr);
+    if (mWindow == nullptr) {
+        return false;
+    }
+
+    glfwSetWindowUserPointer(mWindow, this);
+    glfwSetDropCallback(mWindow, [](GLFWwindow* window, int count, const char* paths[]) {
+        App* self = static_cast<App*>(glfwGetWindowUserPointer(window));
+        self->onFileDrop(count, paths);
+    });
+
+    GLFWimage images[1];
+    // Icon is converted to byte array in pre-build stage. It's content is defined in resources.cpp.
+    images[0].pixels = stbi_load_from_memory(title_bar_icon_png, title_bar_icon_png_size, &images[0].width, &images[0].height, nullptr, 0);
+    glfwSetWindowIcon(mWindow, 1, images);
+    glfwMakeContextCurrent(mWindow);
+    glfwSwapInterval(1); // Enable vsync
+
+    // Initialize OpenGL loader
+    if (gl3wInit() != 0) {
+        promptError("Failed to initialize OpenGL loader!");
+        return false;
+    }
+
+#ifdef _DEBUG
+    // Check output frame buffer has no gamma color encoding, since we done it in our shader of image presentation.
+    GLint encoding;
+    glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_FRONT_LEFT, GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING, &encoding);
+    assert(encoding == GL_LINEAR);
+#endif
+
+    ScopeMarker("Initialization");
+
+    // Setup Dear ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+
+    setThemeColors();
+
+    ImGui_ImplGlfw_InitForOpenGL(mWindow, true);
+    ImGui_ImplOpenGL3_Init(glsl_version);
+
+    mToolbarHeight = 32.0f;
+    mFooterHeight = 20.0f;
+
+    // Fonts are converted into data arrays in pre-built stage. It uses bin2c.cmake to convert
+    // resources/fonts/*.ttf into corresponding data arrays. Here we simply add fonts from 
+    // memory. But in order to keep ownership of font data, we need to set FontDataOwnedByAtlas
+    // to false, otherwise ImGui would release font data and cause crash when closing app window.
+    // https://github.com/ocornut/imgui/issues/220
+    ImFontConfig config;
+    config.FontDataOwnedByAtlas = false;
+    mSmallFont = io.Fonts->AddFontFromMemoryTTF(roboto_regular_ttf, roboto_regular_ttf_size, 13.0f, &config);
+    io.FontDefault = io.Fonts->AddFontFromMemoryTTF(roboto_regular_ttf, roboto_regular_ttf_size, 15.0f, &config);
+
+    config.MergeMode = true;
+    config.PixelSnapH = true;
+    config.GlyphMinAdvanceX = 16.0f; // Use if you want to make the icon monospaced
+    static const ImWchar icon_ranges[] = { ICON_MIN_FA, ICON_MAX_FA, 0 };
+    io.Fonts->AddFontFromMemoryTTF(fa_solid_900_ttf, fa_solid_900_ttf_size, config.GlyphMinAdvanceX, &config, icon_ranges);
+    
+    // Create another font with small icons.
+    config.MergeMode = false;
+    config.GlyphMinAdvanceX = 0.0f;
+    mSmallIconFont = io.Fonts->AddFontFromMemoryTTF(roboto_regular_ttf, roboto_regular_ttf_size, 15.0f, &config);
+
+    config.MergeMode = true;
+    config.GlyphMinAdvanceX = 14.0f;
+    io.Fonts->AddFontFromMemoryTTF(fa_solid_900_ttf, fa_solid_900_ttf_size, config.GlyphMinAdvanceX, &config, icon_ranges);
+
+    // Initialize bit map texture for shader to render pixel's RGB values.
+    initDigitCharData((unsigned char*)robotomono_regular_ttf);
+
+    bool status = INIT_SHADER(mPresentShader, "present", quad, present);
+    CHECK_AND_RETURN_IT(status, "Failed to initialize present shader");
+
+    status = INIT_SHADER(mGradingShader, "color_grading", quad, color_grading);
+    CHECK_AND_RETURN_IT(status, "Failed to initialize color grading shader");
+
+    return status;
+}
+
+void App::initDigitCharData(const unsigned char* data)
+{
+    constexpr int bitmapWidth = 256;
+    unsigned char bitmap[bitmapWidth * bitmapWidth];
+    constexpr float fontHeight = 84.0f;
+
+    // Bake bitmap from ASCII code 46 to 58: ./0123456789
+    constexpr int charNumber = 12;
+    constexpr int firstAsciiCodeIdx = 46;
+    stbtt_bakedchar cdata[charNumber];
+    int result = stbtt_BakeFontBitmap(data, 0, fontHeight, bitmap, bitmapWidth, bitmapWidth, firstAsciiCodeIdx, charNumber, cdata);
+    if (result < 0) {
+        promptError("Failed to initialized font!");
+    }
+
+    // Push data for digit 0-9 whose ASCII code is [48, 57]
+    for (int c = 48; c < 58; c++) {
+        const auto& ch = cdata[c - firstAsciiCodeIdx];
+        mCharUvRanges.push_back(getCharUvRange(ch, bitmapWidth));
+        mCharUvXforms.push_back(getCharUvXform(ch, fontHeight));
+    }
+
+    // Push data for decimal point '.'
+    mCharUvRanges.push_back(getCharUvRange(cdata[0], bitmapWidth));
+    mCharUvXforms.push_back(getCharUvXform(cdata[0], fontHeight));
+
+    glGenTextures(1, &mFontTexture);
+    glBindTexture(GL_TEXTURE_2D, mFontTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, bitmapWidth, bitmapWidth, 0, GL_RED, GL_UNSIGNED_BYTE, bitmap);
+
+    // Generate mipmap for the text texture
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 3);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glGenerateMipmap(GL_TEXTURE_2D);
+}
+
+void App::release()
+{
+    // Cleanup
+    mImageList.clear();
+
+    mPresentShader.release();
+    mGradingShader.release();
+
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
+    glfwDestroyWindow(mWindow);
+    glfwTerminate();
+}
+
+// This is executed in GL thread.
+void App::processTextureUploadTasks()
+{
+    std::vector<TextureUPtr> newTextureList;
+    {
+        std::unique_lock<std::mutex> lock(mUploadMutex);
+        std::move(mUploadTaskQueue.begin(), mUploadTaskQueue.end(), std::back_inserter(newTextureList));
+        mUploadTaskQueue.clear();
+    }
+
+    bool isUndo = false;
+    for (auto& newTexture : newTextureList) {
+        ScopeMarker("Upload Texture");
+        newTexture->upload();
+        const int index = newTexture->index();
+        if (index == -1) {
+            newTexture->index() = static_cast<int>(mImageList.size());
+            mImageList.push_back(std::move(newTexture));
+        } else {
+            isUndo = true;
+            auto it = std::find_if(mImageList.begin(), mImageList.end(), [index](TextureUPtr& tex) {
+                return tex->index() > index;
+            });
+            mImageList.insert(it, std::move(newTexture));
+
+            for (size_t i = 0; i < mCurAction.imageIdxArray.size(); i++) {
+                if (mCurAction.imageIdxArray[i] == index) {
+                    mCurAction.imageIdxArray.erase(mCurAction.imageIdxArray.begin() + i);
+                    mCurAction.filepathArray.erase(mCurAction.filepathArray.begin() + i);
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!newTextureList.empty() && !isUndo) {
+        mTopImageIndex = static_cast<int>(mImageList.size()) - 1;
+        resetImageTransform(getTopImage()->size());
+
+        if (mCmpImageIndex == -1 && mTopImageIndex >= 1) {
+            mCmpImageIndex = 0;
+        }
+    }
+
+    // If current action is undo of remove.
+    if (isUndo && mCurAction.type == Action::Type::Remove) {
+        int curImageNum = static_cast<int>(mImageList.size());
+        mTopImageIndex = std::min(mCurAction.prevTopImageIdx, curImageNum - 1);
+        mCmpImageIndex = std::min(mCurAction.prevCmpImageIdx, curImageNum - 1);
+
+        if (mCurAction.filepathArray.empty()) {
+            mCurAction.reset();
+        }
+    }
+}
+
+void App::run(CompositeFlags initFlags)
+{
+    bool shouldChangeComposition = true;
+
+    // Spawn worker threads to handle import images.
+    const unsigned int workerNum = std::max(1u, std::thread::hardware_concurrency() / 2);
+    PushRangeMarker("Initialize Worker");
+    std::vector<std::thread> workers(workerNum);
+    for (auto& worker : workers) {
+        worker = std::move(std::thread(&App::processImportTasks, this));
+    }
+    PopRangeMarker();
+
+    while (!glfwWindowShouldClose(mWindow)) {
+        glfwPollEvents();
+
+        processTextureUploadTasks();
+        if (shouldChangeComposition && mImageList.size() >= 2) {
+            mCompositeFlags = initFlags;
+            shouldChangeComposition = false;
+        }
+
+        // Start the Dear ImGui frame
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        initToolbar();
+        initFooter();
+        initImagePropWindow();
+        
+        ImGuiIO& io = ImGui::GetIO();
+        if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow) &&
+            !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)) {
+            updateImageSplitterPos(io);
+        }
+
+        onKeyPressed(io);
+        updateImageTransform(io);
+
+        const bool enableCompareView = inCompareMode();
+        if (shouldShowSplitter() && mShowImageNameOverlay) {
+            showImageNameOverlays();
+        }
+
+        if (enableCompareView && ((getPixelMarkerFlags() & 0x2) > 0)) {
+            Vec2f heatbarPos(8.0f, io.DisplaySize.y - mFooterHeight - 8.0f - 20.0f);
+            showHeatRangeOverlay(heatbarPos, 150.0f);
+        }
+        
+        // Since GLFW doesn't support crsor of resize all, thus we use imgui to draw that cursor.
+        // Caution: the cursor is hidden when using imgui's drawn cursor, when the root window is unfocused.
+        io.MouseDrawCursor = (ImGui::GetMouseCursor() == ImGuiMouseCursor_ResizeAll);
+
+        //ImGui::ShowDemoWindow();
+
+        ImGui::Render();
+
+        Texture* topImage = getTopImage();
+        if (topImage) {
+            gradingTexImage(*topImage, mTopImageRenderTexIdx);
+        }
+
+        if (enableCompareView && mCmpImageIndex >= 0) {
+            Texture* cmpImage = mImageList[mCmpImageIndex].get();
+            gradingTexImage(*cmpImage, mTopImageRenderTexIdx ^ 1);
+        }
+
+        glViewport(0, 0, static_cast<GLsizei>(io.DisplaySize.x), static_cast<GLsizei>(io.DisplaySize.y));
+        glClearColor(0.45f, 0.55f, 0.6f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glDepthMask(GL_FALSE);
+        glDisable(GL_DEPTH_TEST);
+
+        // Render image viewer display
+        // TODO: Use depth culling to avoid over-drawing.
+        mPresentShader.bind();
+        glActiveTexture(GL_TEXTURE0);
+
+        // We have to forcely use nearest filter to properly show numerical values within a pixel.
+        const bool forceNearestFilter = mImageScale > 5.0f;
+
+        if (topImage) {
+            mRenderTextures[mTopImageRenderTexIdx].setFilter(mUseLinearFilter && !forceNearestFilter);
+
+            Vec2f imageSize = topImage->size();
+            mPresentShader.setUniform("uImageSize", imageSize * mImageScale);
+
+            Vec2f offset = getImageOffset(io.DisplaySize, imageSize);
+            mPresentShader.setUniform("uOffset", offset);
+            mPresentShader.setUniform("uImage1", 0);
+        } else {
+            mPresentShader.setUniform("uImageSize", Vec2f(0.0f));
+        }
+
+        mPresentShader.setUniform("uEnablePixelHighlight", !mIsMovingSplitter);
+        mPresentShader.setUniform("uCursorPos", Vec2f(io.MousePos.x, io.DisplaySize.y - io.MousePos.y) + Vec2f(0.5f));        
+        mPresentShader.setUniform("uSideBySide", mCompositeFlags == CompositeFlags::SideBySide);
+        mPresentShader.setUniform("uPixelMarkerFlags", getPixelMarkerFlags());
+        mPresentShader.setUniform("uPresentMode", mCurrentPresentMode);
+        mPresentShader.setUniform("uOutTransformType", mOutTransformType);
+        mPresentShader.setUniform("uWindowSize", Vec2f(io.DisplaySize));
+        mPresentShader.setUniform("uImageScale", mImageScale);
+        mPresentShader.setUniform("uSplitPos", enableCompareView ? mViewSplitPos : 1.0f);
+        mPresentShader.setUniform("uDisplayGamma", mDisplayGamma);
+        //mPresentShader.setUniform("uApplyToneMapping", mEnableToneMapping);
+        mPresentShader.setUniform("uCharUvRanges", mCharUvRanges);
+        mPresentShader.setUniform("uCharUvXforms", mCharUvXforms);
+
+        if (enableCompareView && mCmpImageIndex >= 0) {
+            glActiveTexture(GL_TEXTURE1);
+            mRenderTextures[mTopImageRenderTexIdx ^ 1].setFilter(mUseLinearFilter && !forceNearestFilter);
+            mPresentShader.setUniform("uImage2", 1);
+        }
+
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, mFontTexture);
+        mPresentShader.setUniform("uFontImage", 2);
+
+        mPresentShader.drawTriangle();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        glfwSwapBuffers(mWindow);
+    }
+
+    {
+        const std::lock_guard<std::mutex> lock(mLoadMutex);
+        mAboutToTerminate = true;
+        mConditionVar.notify_all();
+    }
+
+    for (auto& worker : workers) {
+        worker.join();
+    }
+}
+
+void    App::gradingTexImage(Texture &texture, int renderTexIdx)
+{
+    const Vec2i size = texture.size();
+    mRenderTextures[renderTexIdx].initialize(size, GL_RGBA16F, true);
+
+    glViewport(0, 0, size.x, size.y);
+    glClearColor(0.45f, 0.55f, 0.6f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_DEPTH_TEST);
+
+    mGradingShader.bind();
+    
+    glActiveTexture(GL_TEXTURE0);
+    texture.setFilter(false);
+    mGradingShader.setUniform("uImage", 0);
+    mGradingShader.setUniform("uEV", mExposureValue);
+    mGradingShader.setUniform("uInImageProp", Vec2i(
+        static_cast<int>(texture.getColorEncodingType()),
+        static_cast<int>(texture.getColorPrimaryType())));
+
+    mGradingShader.drawTriangle();
+    mRenderTextures[renderTexIdx].unbind();
+}
+
+void    App::onKeyPressed(ImGuiIO& io)
+{
+    if (ImGui::IsKeyPressed(0x102)) { // tab
+        mShowImagePropWindow ^= true;
+    } else if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(0x57)) { // Ctrl+Shift+w
+        clearImages(true);
+    } else if (io.KeyCtrl && ImGui::IsKeyPressed(0x5A)) { // Ctrl+z
+        undoAction();
+    } else if (ImGui::IsKeyPressed(0x53)) { // s
+        toggleSplitView();
+    } else if (ImGui::IsKeyPressed(0x43)) { // c
+        toggleSideBySideView();
+    } else if (ImGui::IsKeyPressed(0x51)) { // q
+        mUseLinearFilter ^= true;
+    } else if (ImGui::IsKeyPressed(0x57)) { // w
+        mShowPixelMarker ^= true;
+    } else if (ImGui::IsKeyPressed(0x122)) { // F1
+        ImGui::OpenPopup("Home");
+    } else if (ImGui::IsKeyPressed(0x126)) { // F5
+        Texture* image = getTopImage();
+        if (image) image->reloadFile();
+    } else if (ImGui::IsKeyPressed(0x103) || ImGui::IsKeyPressed(0x105)) { // Backspace/Del
+        if (mTopImageIndex > -1) ImGui::OpenPopup(kImageRemoveDlgTitle);
+    } else {
+        updateImagePairFromPressedKeys();
+        // ps. There are few other key pressed cases are handled in updateImageTransform().
+    }
+
+    initHomeWindow("Home");
+
+    if (showRemoveImageDlg(kImageRemoveDlgTitle)) {
+        removeTopImage(true);
+    }
+}
+
+void    App::updateImageSplitterPos(ImGuiIO& io)
+{
+    if (!shouldShowSplitter()) {
+        return;
+    }
+
+    const bool isHoverSplitter = !ImGui::IsMouseDragging(0) && std::abs((io.MousePos.x / io.DisplaySize.x) - mViewSplitPos) < 1e-2f;
+    ImGui::SetMouseCursor(isHoverSplitter || mIsMovingSplitter ? ImGuiMouseCursor_ResizeEW : ImGuiMouseCursor_Arrow);
+
+    if (ImGui::IsMouseDown(0)) { // LMB pressed
+        if (isHoverSplitter) {
+            mIsMovingSplitter = true;
+        }
+    } else {
+        mIsMovingSplitter = false;
+    }
+
+    if (mIsMovingSplitter) {
+        mViewSplitPos = glm::clamp(io.MousePos.x / io.DisplaySize.x, 0.02f, 0.98f);
+    }
+}
+
+void    App::updateImageTransform(ImGuiIO& io)
+{
+    Texture* topImage = getTopImage();
+    if (!topImage) {
+        return;
+    }
+    
+    Vec2f imageSize = topImage->size();
+    Vec2f imageOffset = getImageOffset(io.DisplaySize, imageSize);
+
+    bool onFocus = !ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow);
+    float oldImageScale = mImageScale;
+    
+    if (ImGui::IsKeyReleased(0x5A)) {
+        mImageScale = mPrevImageScale;
+        mPrevImageScale = -1.0f;
+    }
+
+    if (onFocus) {
+        if (ImGui::IsMouseDown(0) && ImGui::IsMouseDown(1)) {
+            // Scale the image when both left and right buttons are pressed.
+            mImageScale *= (1.0f - io.MouseDelta.y * 0.01f);
+        } else if (!mIsMovingSplitter && ImGui::IsMouseDown(0)) {
+            // Translate image
+            mImageTransform[2].x += io.MouseDelta.x;
+            mImageTransform[2].y -= io.MouseDelta.y; // y-axis of window coordinates is opposite to texture coordinates.
+
+            applyImageTransformConstraint(io.DisplaySize, imageSize * mImageScale, imageOffset);
+
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+            return;
+        }
+    }
+
+    // Zoom in/out from mouse scroll.
+    if (io.MouseWheel != 0.0f) {
+        mImageScalePivot = Vec2f(io.MousePos.x, io.DisplaySize.y - io.MousePos.y);
+
+        if (mImageScale == 2) {
+            if (io.MouseWheel >= 0.0f) {
+                mImageScale += io.MouseWheel;
+            } else {
+                mImageScale /= 1 << (int)(-io.MouseWheel);
+            }
+        } else if (mImageScale > 2) {
+            mImageScale *= io.MouseWheel > 0.0f ? 1.414f : 0.707f;
+        } else {
+            if (io.MouseWheel >= 0.0f) {
+                mImageScale *= 1 << (int)(io.MouseWheel);
+            } else {
+                mImageScale /= 1 << (int)(-io.MouseWheel);
+            }
+        }
+    }
+
+    // Transfrom from keyboard
+    if (ImGui::IsKeyPressed(0x14D) || ImGui::IsKeyPressed(0x2D)) {
+        float newScale = std::max(0.125f, mImageScale * 0.5f);
+        mImageScale = newScale > 1.0f ? glm::roundEven(newScale) : newScale;
+    } else if (ImGui::IsKeyPressed(0x14E) || ImGui::IsKeyPressed(0x3D)) {
+        float newScale = std::min(256.0f, mImageScale * 2.0f);
+        mImageScale = newScale > 1.0f ? glm::roundEven(newScale) : newScale;
+    } else if (ImGui::IsKeyPressed(0x5A) && mPrevImageScale < 0.0f) {
+        mImageScalePivot = Vec2f(io.MousePos.x, io.DisplaySize.y - io.MousePos.y);
+        mPrevImageScale = mImageScale;
+        mImageScale = 84.0f;
+    } else if (ImGui::IsKeyPressed(0x14C) || (io.KeyShift && ImGui::IsKeyPressed(0x046))) { // '*' or shift+f
+        resetImageTransform(topImage->size(), true);
+        return;
+    } else if (ImGui::IsKeyPressed(0x14B) || ImGui::IsKeyPressed(0x046)) { // '/' or 'f'
+        resetImageTransform(topImage->size());
+        return;
+    }
+
+    // If scale pivot is outside the image region, we just shift it to the center of image.
+    Vec2f mask = glm::step(imageOffset, mImageScalePivot) - glm::step(imageOffset + imageSize * oldImageScale, mImageScalePivot);
+    if (mask.x * mask.y == 0.0f) {
+        mImageScalePivot = glm::clamp(imageOffset + imageSize * oldImageScale * 0.5f, Vec2f(0.0f), Vec2f(io.DisplaySize));
+    }
+
+    mImageScale = glm::clamp(mImageScale, 0.125f, 256.0f);
+    
+    // Compose transformation matrix.
+    float relativeScale = mImageScale / oldImageScale;
+    if (relativeScale > 1e-4f) {
+        Mat3f xform(1.0f);
+        xform[0][0] = relativeScale;
+        xform[1][1] = relativeScale;
+        xform[2] = Vec3f(-relativeScale * mImageScalePivot.x + mImageScalePivot.x, -relativeScale * mImageScalePivot.y + mImageScalePivot.y, 1.0f);
+        mImageTransform = xform * mImageTransform;
+    }
+
+    //applyImageTransformConstraint(io.DisplaySize, imageSize * mImageScale, imageOffset);
+}
+
+
+// Restrict transformation to avoid image moving out of viewport.
+void    App::applyImageTransformConstraint(const Vec2f& viewportSize, const Vec2f& imageSize, const Vec2f& imageOffset)
+{
+    const auto safePadding = Vec2f(100.0f);
+
+    Vec2f minOffset = safePadding - imageSize;
+    Vec2f maxOffset = viewportSize - safePadding;
+    Vec2f coffset(0.0f);
+
+    coffset = glm::mix(coffset, minOffset - imageOffset, glm::lessThan(imageOffset, minOffset));
+    coffset = glm::mix(coffset, maxOffset - imageOffset, glm::greaterThan(imageOffset, maxOffset));
+
+    mImageTransform[2][0] += coffset.x;
+    mImageTransform[2][1] += coffset.y;
+}
+
+void App::updateImagePairFromPressedKeys()
+{
+    const int imageNum = static_cast<int>(mImageList.size());
+    if (imageNum < 2) {
+        return;
+    }
+
+    bool isSwap = ImGui::IsKeyPressed(0x109) || ImGui::IsKeyPressed(0x58); // Up arrow or 'x'
+    bool isNext = ImGui::IsKeyPressed(0x106) || ImGui::IsKeyPressed(0x44); // Right arrow or 'd'
+    bool isPrev = ImGui::IsKeyPressed(0x107) || ImGui::IsKeyPressed(0x41); // Left arrow or 'a'
+
+    const bool enableCompareView = inCompareMode();
+
+    if (enableCompareView && isSwap) {
+        std::swap(mCmpImageIndex, mTopImageIndex);
+        mTopImageRenderTexIdx ^= 1;
+    } else if (enableCompareView && imageNum > 2) {
+        // Rotate compared image, shift further if it collides top image.
+        if (isNext) {
+            mCmpImageIndex = (mCmpImageIndex + 1) % imageNum;
+            if (mCmpImageIndex == mTopImageIndex) {
+                mCmpImageIndex = (mCmpImageIndex + 1) % imageNum;
+            }
+        } else if (isPrev) {
+            mCmpImageIndex = (mCmpImageIndex - 1 + imageNum) % imageNum;
+            if (mCmpImageIndex == mTopImageIndex) {
+                mCmpImageIndex = (mCmpImageIndex - 1 + imageNum) % imageNum;
+            }
+        }
+    } else if (!enableCompareView) {
+        // Rotate top image, if it collides compared image, shift compared image.
+        if (isNext) {
+            mTopImageIndex = (mTopImageIndex + 1) % imageNum;
+            if (mCmpImageIndex == mTopImageIndex) {
+                mCmpImageIndex = (mCmpImageIndex + 1) % imageNum;
+            }
+        } else if (isPrev) {
+            mTopImageIndex = (mTopImageIndex - 1 + imageNum) % imageNum;
+            if (mCmpImageIndex == mTopImageIndex) {
+                mCmpImageIndex = (mCmpImageIndex - 1 + imageNum) % imageNum;
+            }
+        }
+    }
+}
+
+void    App::initToolbar()
+{
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+
+    ImGui::SetNextWindowPos(Vec2f(0.0f));
+    ImGui::SetNextWindowSize(Vec2f(g.IO.DisplaySize.x, mToolbarHeight));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, Vec2f(2.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, Vec2f(2.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 2.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, Vec2f(4.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, Vec2f(0.5f, 0.75f));   // Make font icon align center.
+    ImGui::PushStyleColor(ImGuiCol_Button, g.Style.Colors[ImGuiCol_MenuBarBg]);
+
+    ImGui::Begin("toolbar", nullptr, ImGuiWindowFlags_NoDecoration);
+
+    const Vec2f buttonSize(26.0f);
+    const char* popupWindowName = "Home";
+
+    if (ImGui::Button(ICON_FA_HOME, buttonSize)) {
+        ImGui::OpenPopup(popupWindowName);
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_FILE_IMPORT, buttonSize)) {
+        showImportImageDlg();
+    }
+
+    //ImGui::SameLine();
+    //ImGui::Button(ICON_FA_SAVE, buttonSize);
+
+    const float comboMenuWidth = 100.0f;
+    static float centeredToolItemWidth = 506.0f;
+    ImGui::SameLine((g.IO.DisplaySize.x - centeredToolItemWidth) * 0.5f);
+    float centeredToolBeginPos = g.CurrentWindow->DC.CursorPos.x;
+    ToggleButton(ICON_FA_FEATHER, &mUseLinearFilter, buttonSize);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Smooth image");
+    }
+
+    ImGui::SameLine();
+    const bool couldCompare = mImageList.size() > 1;
+    bool inSplitView = (mCompositeFlags == CompositeFlags::Split);
+    if (ToggleButton(ICON_FA_I_CURSOR, &inSplitView, buttonSize, couldCompare)) {
+        mCompositeFlags = inSplitView ? CompositeFlags::Split : CompositeFlags::Top;
+    }
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Split View"); }
+
+    ImGui::SameLine();
+    bool inSideBySideView = (mCompositeFlags == CompositeFlags::SideBySide);
+    if (ToggleButton(ICON_FA_COLUMNS, &inSideBySideView, buttonSize, couldCompare)) {
+        mCompositeFlags = inSideBySideView ? CompositeFlags::SideBySide : CompositeFlags::Top;
+    }
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Side by Side View"); }
+
+    ImGui::SameLine();
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, Vec2f(5.0f));
+    ImGui::PushItemWidth(comboMenuWidth);
+    const char* outTransformTypes[] = { "sRGB", "P3 D65", "BT.2020" };
+    if (ImGui::BeginCombo("##OutputColorSpace", outTransformTypes[mOutTransformType])) // The second parameter is the label previewed before opening the combo.
+    {
+        for (int i = 0; i < IM_ARRAYSIZE(outTransformTypes); i++) {
+            bool isSelected = (mOutTransformType == i);
+            if (ImGui::Selectable(outTransformTypes[i], isSelected)) {
+                mOutTransformType = i;
+            }
+
+            if (isSelected) {
+                ImGui::SetItemDefaultFocus();   // Set the initial focus when opening the combo (scrolling + for keyboard navigation support in the upcoming navigation branch)
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Display Color Primaries");
+    }
+
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(60.0f);
+    ImGui::SliderFloat("##EV", &mExposureValue, -8.0f, 8.0f, "EV: %.1f");
+    if (ImGui::IsItemClicked(1)) {
+        mExposureValue = 0.0f;
+    }
+
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(80.0f);
+    ImGui::SliderFloat("##Gamma", &mDisplayGamma, 1.0f, 2.8f, "gamma: %.1f");
+    if (ImGui::IsItemClicked(1)) {
+        mDisplayGamma = 2.2f;
+    }
+
+    ImGui::SameLine();
+    const char* presentModes[] = { "RGB", "R", "G", "B", "Luminance", "CIE L*", "CIE a*", "CIE b*" };
+    if (ImGui::BeginCombo("##Channel", presentModes[mCurrentPresentMode])) // The second parameter is the label previewed before opening the combo.
+    {
+        for (int i = 0; i < IM_ARRAYSIZE(presentModes); i++) {
+            bool isSelected = (mCurrentPresentMode == i);
+            if (ImGui::Selectable(presentModes[i], isSelected)) {
+                mCurrentPresentMode = i;
+            }
+
+            if (isSelected) {
+                ImGui::SetItemDefaultFocus();   // Set the initial focus when opening the combo (scrolling + for keyboard navigation support in the upcoming navigation branch)
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Channels");
+    }
+
+    ImGui::PopItemWidth();
+    ImGui::PopStyleVar(1);
+
+    /*ImGui::SameLine();
+    ToggleButton(ICON_FA_FILM, &mEnableToneMapping, buttonSize, mCurrentPresentMode == 0);*/
+
+    ImGui::SameLine();
+    ToggleButton(ICON_FA_EXCLAMATION_TRIANGLE, &mShowPixelMarker, buttonSize);
+    if (ImGui::IsItemClicked(1)) { ImGui::OpenPopup("PixelMarkMenu"); }
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Show Pixel Exclamation"); }
+
+    if (ImGui::BeginPopup("PixelMarkMenu")) {
+        const bool enableCompareView = inCompareMode();
+
+        bool itemValue = hasAllFlags(mPixelMarkerFlags, PixelMarkerFlags::Difference);
+        if (ImGui::MenuItem("Difference", "", &itemValue, enableCompareView)) {
+            auto newState = itemValue ? PixelMarkerFlags::Difference : PixelMarkerFlags::None;
+            mPixelMarkerFlags = (mPixelMarkerFlags & ~PixelMarkerFlags::DiffMask) | newState;
+        }
+        itemValue = hasAllFlags(mPixelMarkerFlags, PixelMarkerFlags::DiffHeatMap);
+        if (ImGui::MenuItem("Diff as Heatmap", "", &itemValue, enableCompareView)) {
+            auto newState = itemValue ? PixelMarkerFlags::DiffHeatMap : PixelMarkerFlags::None;
+            mPixelMarkerFlags = (mPixelMarkerFlags & ~PixelMarkerFlags::DiffMask) | newState;
+        }
+
+        const bool showDiffMarker = hasAnyFlags(mPixelMarkerFlags, PixelMarkerFlags::DiffMask);
+        
+        itemValue = hasAllFlags(mPixelMarkerFlags, PixelMarkerFlags::Overflow);
+        if (ImGui::MenuItem("Overflow", "", &itemValue, !enableCompareView || !showDiffMarker)) {
+            mPixelMarkerFlags = toggleFlags(mPixelMarkerFlags, PixelMarkerFlags::Overflow);
+        }
+
+        itemValue = hasAllFlags(mPixelMarkerFlags, PixelMarkerFlags::Underflow);
+        if (ImGui::MenuItem("Underflow", "", &itemValue, !enableCompareView || !showDiffMarker)) {
+            mPixelMarkerFlags = toggleFlags(mPixelMarkerFlags, PixelMarkerFlags::Underflow);
+        }
+
+        ImGui::EndPopup();
+    }
+
+    ImGui::SameLine();
+    centeredToolItemWidth = g.CurrentWindow->DC.CursorPos.x - centeredToolBeginPos;
+
+    // Show buttons at right hand side.
+    ImGui::SameLine(g.IO.DisplaySize.x - (buttonSize.x + g.Style.ItemSpacing.x) * 2.0f);
+    ToggleButton(ICON_FA_COMMENT_ALT, &mShowImageNameOverlay, buttonSize);
+
+    ImGui::SameLine(g.IO.DisplaySize.x - buttonSize.x - g.Style.ItemSpacing.x);
+    ToggleButton(ICON_FA_CHART_BAR, &mShowImagePropWindow, buttonSize);
+
+    ImGui::PopStyleColor(1);
+    ImGui::PopStyleVar(7);
+
+    initHomeWindow(popupWindowName);
+    ImGui::End();
+}
+
+bool    App::initImagePropWindowHandle(float handleWidth, bool& showPropWindow)
+{
+    bool isHovered = false;
+
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    //const auto handleWidth = g.FontSize;
+    ImGui::SetNextWindowPos(ImVec2(g.IO.DisplaySize.x - handleWidth, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(handleWidth, g.IO.DisplaySize.y));
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, Vec2f(0.0f));
+    ImGui::Begin("ImagePropHandle", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+    ImGui::PushStyleColor(ImGuiCol_Button, g.Style.Colors[ImGuiCol_MenuBarBg]);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, g.Style.Colors[ImGuiCol_ButtonHovered]);
+    const char* label = showPropWindow ? ":\n}\n:" : ":\n{\n:";
+    if (ImGui::Button(label, ImVec2(handleWidth, g.IO.DisplaySize.y))) {
+        showPropWindow ^= true;
+    }
+    ImGui::PopStyleColor(2);
+
+    if (ImGui::IsItemHovered()) {
+        isHovered = true;
+    }
+    ImGui::End();
+    ImGui::PopStyleVar(3);
+
+    return isHovered;
+}
+
+
+// Ref: splitter https://github.com/ocornut/imgui/issues/319
+void App::initImagePropWindow()
+{
+    bool checkPopupRect = false;
+
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    const float handleWidth = g.FontSize;
+
+    // Create a window as a toggle handle to open/close property window.
+    if (initImagePropWindowHandle(handleWidth, mShowImagePropWindow)) {
+        mPopupImagePropWindow = true;
+    } else {
+        checkPopupRect = true;
+    }
+
+    if (!mShowImagePropWindow && !mPopupImagePropWindow) {
+        return;
+    }
+
+    // Create a property window.
+    const float propWindowWidth = getPropWindowWidth();
+    ImGui::SetNextWindowPos(ImVec2(g.IO.DisplaySize.x - propWindowWidth - handleWidth, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(propWindowWidth, g.IO.DisplaySize.y));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, Vec2f(4.0f, mToolbarHeight));
+
+    ImGui::Begin(kImagePropWindowName, nullptr, ImGuiWindowFlags_NoTitleBar
+        | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus
+        | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+    ImGui::PopStyleVar(2);
+
+    // Create horizontal splitter for up and down panels.
+    float size1 = (g.IO.DisplaySize.y - mToolbarHeight - mFooterHeight) * mPropWindowHSplitRatio;
+    float size2 = g.IO.DisplaySize.y - size1 - mToolbarHeight - mFooterHeight;
+    Splitter(false, 2.5f, &size1, &size2, 60, 160, propWindowWidth);
+    mPropWindowHSplitRatio = size1 / (g.IO.DisplaySize.y - mToolbarHeight - mFooterHeight);
+
+    ImGui::BeginChild("ScrollingRegion1", ImVec2(propWindowWidth - g.Style.WindowPadding.x, size1));
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+    // Draw advanced histogram https://github.com/ocornut/imgui/issues/632
+    //if (ImGui::CollapsingHeader("Histogram")) {
+    //    struct Funcs
+    //    {
+    //        static float Sin(void*, int i) { return sinf(i * 0.1f); }
+    //        static float Saw(void*, int i) { return (i & 1) ? 1.0f : -1.0f; }
+    //    };
+    //    static int func_type = 0, display_count = 256;
+    //    static float arr[] = { 0.6f, 0.1f, 1.0f, 0.5f, 0.92f, 0.1f, 0.2f };
+    //    float(*func)(void*, int) = (func_type == 0) ? Funcs::Sin : Funcs::Saw;
+    //    //ImGui::PlotHistogram("##histogram", func, NULL, display_count, 0, NULL, -1.0f, 1.0f, ImVec2(0, 120));
+    //    ImGui::PlotHistogram("##histogram", arr, IM_ARRAYSIZE(arr), 0, NULL, 0.0f, 1.0f, ImVec2(0, 80));
+    //}
+
+    //if (ImGui::CollapsingHeader("Scope")) {
+    //}
+
+    //if (ImGui::CollapsingHeader("Wavefront")) {
+    //}
+
+    if (ImGui::CollapsingHeader("Image Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
+        showImageProperties();
+    }
+
+    ImGui::PopStyleVar(1);
+    ImGui::EndChild();
+
+    const float spacerHeight = 4.0f;
+    Vec2f buttonSize(20.0f);
+    const float toolbarHeight = buttonSize.y + g.Style.FramePadding.y * 2.0f + g.Style.ItemSpacing.y;
+    const float titleHeight = ImGui::GetFrameHeightWithSpacing() + spacerHeight;
+    ImGui::Dummy(Vec2f(0.0f, spacerHeight));
+    ImGui::Text("  " ICON_FA_LAYER_GROUP "  Images");
+
+    ImGui::BeginChild("ScrollingRegion2", ImVec2(propWindowWidth - g.Style.WindowPadding.x, size2 - titleHeight - toolbarHeight), true);
+    ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, Vec2f(0.0f, 0.5f));
+
+    const int bufSize = 64;
+    const int maxFilenameLength = bufSize - 10; // Reserve 10 chars for icon and spaces
+    char buf[bufSize];
+    const int imageNum = static_cast<int>(mImageList.size());
+    const bool enableCompareView = inCompareMode();
+
+    Vec4f activeBorderColor(1.0f, 1.0f, 1.0f, 1.0f);
+    Vec4f borderColor(1.0f, 1.0f, 1.0f, 0.5f);
+
+    for (int i = 0; i < imageNum; i++) {
+        std::string filename = mImageList[i]->filename();
+        const auto filenameLength = filename.size();
+        const char* tag = ((i == mCmpImageIndex || i == mTopImageIndex) && enableCompareView) ? "  " ICON_FA_MAP_PIN : "";
+        if (filenameLength > maxFilenameLength) {
+            filename = filename.substr(filenameLength - maxFilenameLength);
+            snprintf(buf, bufSize, "        ...%s%s", filename.c_str(), tag);
+        } else {
+            snprintf(buf, bufSize, "           %s%s", filename.c_str(), tag);
+        }
+
+        if (ImGui::Selectable(buf, mTopImageIndex == i, 0, Vec2f(propWindowWidth, 24.0f))) {
+            mTopImageIndex = i;
+            if (mCmpImageIndex == i) {
+                mCmpImageIndex = (mCmpImageIndex + 1) % imageNum;
+            }
+        }
+        // Right click mouse to set compared imaeg directly.
+        if (ImGui::IsItemClicked(1) && mTopImageIndex != i) {
+            mCmpImageIndex = i;
+        }
+
+        ImGui::SameLine(g.Style.ItemSpacing.x);
+        ImGui::Image((void*)(intptr_t)mImageList[i]->id(), Vec2f(28.0f, 21.0f), Vec2f(0.0f, 1.0f), Vec2f(1.0f, 0.0f),
+            Vec4f(1.0f), mTopImageIndex == i ? activeBorderColor : borderColor);
+    }
+
+    ImGui::PopStyleVar(1);
+    ImGui::EndChild();
+
+    const int buttonNum = 4;
+    ImGui::PushFont(mSmallIconFont);
+    ImGui::Dummy(Vec2f(propWindowWidth - (buttonSize.x + g.Style.ItemSpacing.x) * buttonNum - handleWidth, buttonSize.y));
+    ImGui::SameLine();
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 2.0f);
+    ImGui::PushStyleColor(ImGuiCol_Button, g.Style.Colors[ImGuiCol_MenuBarBg]);
+
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_FILE_IMPORT "##ImportImage", buttonSize)) {
+        showImportImageDlg();
+    }
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Import Images"); }
+
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_SYNC_ALT "##ReloadImage", buttonSize) && mTopImageIndex > -1) {
+        mImageList[mTopImageIndex]->reloadFile();
+    }
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Reload Selected Image"); }
+
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_MINUS_CIRCLE "##RemoveImage", buttonSize)) {
+        if (ImGui::GetIO().KeyShift) {
+            removeTopImage(true);
+        } else {
+            ImGui::OpenPopup(kImageRemoveDlgTitle);
+        }
+    }
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Close Selected Image"); }
+    if (showRemoveImageDlg(kImageRemoveDlgTitle)) { removeTopImage(true); }
+
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_TRASH_ALT "##ClearImages", buttonSize)) {
+        if (ImGui::GetIO().KeyShift) {
+            clearImages(true);
+        } else if (!mImageList.empty()) {
+            ImGui::OpenPopup(kClearImagesDlgTitle);
+        }
+    }
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Close All Images"); }
+    if (showClearImagesDlg(kClearImagesDlgTitle)) { clearImages(true); }
+
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+    ImGui::PopFont();
+
+    if (checkPopupRect) {
+        mPopupImagePropWindow = ImGui::IsWindowHovered();
+    }
+    ImGui::End();
+}
+
+
+void App::initFooter()
+{
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    ImGui::PushFont(mSmallFont);
+
+    //g.NextWindowData.MenuBarOffsetMinVal = ImVec2(g.Style.DisplaySafeAreaPadding.x, ImMax(g.Style.DisplaySafeAreaPadding.y - g.Style.FramePadding.y, 0.0f));
+    ImGui::SetNextWindowPos(ImVec2(0.0f, g.IO.DisplaySize.y - mFooterHeight));
+    ImGui::SetNextWindowSize(ImVec2(g.IO.DisplaySize.x, mFooterHeight));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, g.Style.FramePadding);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings;
+    ImGui::Begin("##MainFooter", NULL, window_flags);
+    ImGui::PopStyleVar(4);
+
+    if (mImageScale > 1.0f) {
+        sprintf_s(mImageScaleInfo, IM_ARRAYSIZE(mImageScaleInfo), "%.0fx", mImageScale);
+    } else {
+        sprintf_s(mImageScaleInfo, IM_ARRAYSIZE(mImageScaleInfo), "%.2f%%\n", mImageScale * 100.0f);
+    }
+
+    ImGui::Text("%s", mImageScaleInfo);
+
+    if (mTopImageIndex >= 0) {
+        auto& imageSize = mImageList[mTopImageIndex]->size();
+        ImGui::SameLine(g.Style.FramePadding.x + g.FontSize * 4.0f);
+        ImGui::Text("| %.0f x %.0f", imageSize.x, imageSize.y);
+
+        Vec2f imageCoords;
+        if (getImageCoordinates(g.IO.MousePos, imageCoords, *mImageList[mTopImageIndex])) {
+            ImGui::SameLine();
+            ImGui::Text("(%.0f, %.0f)", imageCoords.x, imageCoords.y);
+        }
+    }
+
+    const auto* topImage = getTopImage();
+    if (topImage && !inCompareMode()) {
+        const std::string& filename = topImage->filename();
+        ImGui::SameLine(g.IO.DisplaySize.x - ImGui::CalcTextSize(filename.c_str()).x - g.Style.FramePadding.x);
+        ImGui::Text(filename.c_str());
+    }
+
+    ImGui::End();
+    ImGui::PopFont();
+}
+
+void    App::showImageProperties()
+{
+    auto* topImage = getTopImage();
+    if (!topImage) {
+        return;
+    }
+
+    ImGui::Columns(2, nullptr, false);
+    ImGui::SetColumnWidth(0, 100.0f);
+
+    ImGui::Text("Attrbute");
+    ImGui::NextColumn();
+
+    ImGui::Text("Value");
+    ImGui::NextColumn();
+
+    ImGui::Separator();
+    ImGui::Text("Color Primaries");
+    ImGui::Text("Color Encoding");
+    ImGui::Text("Location");
+    ImGui::Text("Resolution");
+    //ImGui::Text("Bit Depth");
+    ImGui::NextColumn();
+
+    static const ColorPrimaryType colorPrimaryTypes[] = {
+        ColorPrimaryType::BT_709,
+        ColorPrimaryType::DCI_P3_D65,
+        ColorPrimaryType::BT_2020,
+        ColorPrimaryType::ACES_AP1,
+    };
+
+    ImGui::Text(getPropertyLabel(topImage->getColorPrimaryType()));
+    if (ImGui::BeginPopupContextItem("ColorPrimaryMenu")) {
+        for (auto type : colorPrimaryTypes) {
+            const char* label = getPropertyLabel(type);
+            if (ImGui::Selectable(label)) {
+                topImage->setColorPrimaryType(type);
+            }
+        }
+        ImGui::EndPopup();
+    }
+
+    static const ColorEncodingType colorEncodingTypes[] = {
+        ColorEncodingType::Linear,
+        //ColorEncodingType::BT_2020,
+        //ColorEncodingType::BT_2100_HLG,
+        ColorEncodingType::BT_2100_PQ,
+        ColorEncodingType::BT_709,
+        ColorEncodingType::sRGB
+    };
+
+    ImGui::Text(getPropertyLabel(topImage->getColorEncodingType()));
+    if (ImGui::BeginPopupContextItem("ColorEncodingMenu")) {
+        for (auto type : colorEncodingTypes) {
+            const char* label = getPropertyLabel(type);
+            if (ImGui::Selectable(label)) {
+                topImage->setColorEncodingType(type);
+            }
+        }
+        ImGui::EndPopup();
+    }
+
+    ImGui::Text(topImage->filepath().c_str());
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(topImage->filepath().c_str());
+    }
+
+
+    auto imageSize = topImage->size();
+    ImGui::Text("%.0fx%.0f", imageSize.x, imageSize.y);
+    //ImGui::Text("8 bit");
+    ImGui::NextColumn();
+}
+
+void    App::initHomeWindow(const char* name)
+{
+    bool open = true;
+    
+    ImGui::SetNextWindowContentWidth(500.0f);
+    if (ImGui::BeginPopupModal(name, &open, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
+        //ImGui::Dummy(Vec2f(550.0f, ImGui::GetFrameHeight()));
+        if (ImGui::BeginTabBar("HotkeysBar", ImGuiTabBarFlags_None)) {
+            if (ImGui::BeginTabItem("Hotkeys")) {
+                ImGui::Columns(2, nullptr, false);
+
+                ImGui::Text("Show Home Panel");
+                ImGui::Text("Toggle Property Window");
+                ImGui::Text("Toggle Split View");
+                ImGui::Text("Toggle Side-by-Side Column View");
+                ImGui::Text("Toggle Pixel Warning");
+                ImGui::Text("Toggle Linear Filter");
+                ImGui::NextColumn();
+
+                ImGui::Text("F1");
+                ImGui::Text("Tab");
+                ImGui::Text("S");
+                ImGui::Text("C");
+                ImGui::Text("W");
+                ImGui::Text("Q");
+                ImGui::NextColumn();
+                ImGui::Separator();
+
+                ImGui::Text("Import Images");
+                ImGui::Text("Reload Selected Image");
+                ImGui::Text("Close Selected Image");
+                ImGui::Text("Close All Images");
+                ImGui::NextColumn();
+
+                ImGui::Text("Ctrl+O");
+                ImGui::Text("F5");
+                ImGui::Text("Backspace/Del");
+                ImGui::Text("Ctrl+Shift+W");
+                ImGui::NextColumn();
+
+                ImGui::Separator();
+                ImGui::Text("Pan");
+                ImGui::Text("Pixel Navigation");
+                ImGui::Text("Zoom In/Out");
+                ImGui::Text("Zoom In/Out in Power-of-Two");
+                ImGui::Text("Zoom to 100%");
+                ImGui::Text("Fit to Window");
+                ImGui::NextColumn();
+
+                ImGui::Text("Left Mouse Button Drag");
+                ImGui::Text("Pressing Z");
+                ImGui::Text("Mouse Scroll");
+                ImGui::Text("+/-");
+                ImGui::Text("/ or F");
+                ImGui::Text("* or Shift+F");
+                ImGui::NextColumn();
+
+                ImGui::Separator();
+                ImGui::Text("Switch Compared Images");
+                ImGui::Text("Previous Compared Image");
+                ImGui::Text("Next Compared Image");
+                ImGui::NextColumn();
+
+                ImGui::Text("X or Up Arrow");
+                ImGui::Text("A or Left Arrow");
+                ImGui::Text("D or Right Arrow");
+                //ImGui::NextColumn();
+
+                ImGui::Columns(1);
+                ImGui::EndTabItem();
+            }
+
+            ImGui::EndTabBar();
+        }
+
+        ImGui::Dummy(Vec2f(ImGui::GetFrameHeight()));
+        
+        if (ImGui::BeginTabBar("AboutBar", ImGuiTabBarFlags_None)) {
+            if (ImGui::BeginTabItem("About")) {
+                ImGui::TextWrapped("Bak-Tsiu %s is a neat image viewer focusing on comparing images and examining pixel differences.", VERSION);
+
+                ImGui::Text(u8"\nCopyright© Shih-Chin Weng (http://shihchinw.github.io/)");
+                ImGui::EndTabItem();
+            }
+
+            ImGui::EndTabBar();
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
+bool    App::showRemoveImageDlg(const char* title)
+{
+    bool result = false;
+
+    ImGui::SetNextWindowSizeConstraints(Vec2f(350.0f, 100.0f), Vec2f(400.0f, 250.0f));
+    if (ImGui::BeginPopupModal(title, NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped("Close image %s?\n", getTopImage()->filepath().c_str());
+        ImGui::Dummy(Vec2f(0.0f, ImGui::GetCurrentContext()->FontSize));
+        ImGui::Separator();
+
+        auto& style = ImGui::GetStyle();
+        float buttonWidth = (ImGui::GetWindowWidth() - style.ItemSpacing.x) * 0.5f - style.FramePadding.x * 2.0f;
+        if (ImGui::Button("OK", ImVec2(buttonWidth, 0))) { ImGui::CloseCurrentPopup(); result = true; }
+        ImGui::SetItemDefaultFocus();
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0))) { ImGui::CloseCurrentPopup(); }
+        ImGui::EndPopup();
+    }
+
+    return result;
+}
+
+bool    App::showClearImagesDlg(const char* title)
+{
+    bool result = false;
+    
+    ImGui::SetNextWindowSizeConstraints(Vec2f(300.0f, 80.0f), Vec2f(300.0f, 120.0f));
+    if (ImGui::BeginPopupModal(title, NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Close all images?\n");
+        ImGui::Dummy(Vec2f(0.0f, ImGui::GetCurrentContext()->FontSize));
+        ImGui::Separator();
+        
+        auto& style = ImGui::GetStyle();
+        float buttonWidth = (ImGui::GetWindowWidth() - style.ItemSpacing.x) * 0.5f - style.FramePadding.x * 2.0f;
+        if (ImGui::Button("OK", ImVec2(buttonWidth, 0))) { ImGui::CloseCurrentPopup(); result = true; }
+        ImGui::SetItemDefaultFocus();
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0))) { ImGui::CloseCurrentPopup(); }
+        ImGui::EndPopup();
+    }
+
+    return result;
+}
+
+void    App::showImageNameOverlays()
+{
+    ImGuiIO& io = ImGui::GetIO();
+
+    const float padding = 8.0f;
+
+    Vec2f windowPos(padding, mToolbarHeight + padding);
+    ImGui::SetNextWindowPos(windowPos, ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.5f);
+    const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+    if (ImGui::Begin("##ImageOverlay1", nullptr, windowFlags)) {
+        ImGui::Text(mImageList[mTopImageIndex]->filename().c_str());
+    }
+    ImGui::End();
+
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    const float imagePropHandleWidth = g.FontSize + g.Style.FramePadding.x * 4.0f;
+    const std::string& cmpImageName = mImageList[mCmpImageIndex]->filename();
+    windowPos.x = io.DisplaySize.x - padding - ImGui::CalcTextSize(cmpImageName.c_str()).x - imagePropHandleWidth;
+    if (mShowImagePropWindow || mPopupImagePropWindow) {
+        windowPos.x -= getPropWindowWidth();
+    }
+
+    ImGui::SetNextWindowPos(windowPos, ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.5f);
+    if (ImGui::Begin("##ImageOverlay2", nullptr, windowFlags)) {
+        ImGui::Text(cmpImageName.c_str());
+    }
+    ImGui::End();
+}
+
+void App::showHeatRangeOverlay(const Vec2f& pos, float width)
+{
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+
+    const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration 
+        | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings 
+        | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+
+    Vec2f barSize(width, 12.0f);
+
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(Vec2f(0, 20.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, Vec2f(8.0f, 4.0f));
+    ImGui::PushFont(mSmallFont);
+    //ImGui::SetNextWindowBgAlpha(0.5f);
+    if (ImGui::Begin("##ImageOverlayBar", nullptr, windowFlags)) {
+        ImGui::Text("low");
+        ImGui::SameLine();
+        ImGui::Dummy(barSize);
+
+        ImU32 hues[16 + 1];
+        for (size_t i = 0; i <= 16; i++) {
+            float r = i / 16.0f;
+            float g = glm::sin(180.0f * glm::radians(r));
+            float b = glm::cos(90.0f * glm::radians(r));
+            hues[i] = IM_COL32(r * 255, g * 255, b * 255, 255);
+        }
+
+        Vec2f rampBarPadding = g.Style.WindowPadding + pos;
+        rampBarPadding.x += ImGui::CalcTextSize("low").x + g.Style.ItemSpacing.x;
+
+        ImDrawList* drawList = ImGui::GetCurrentWindow()->DrawList;
+        for (int i = 0; i < 16; ++i) {
+            const auto& startHue = hues[i];
+            const auto& endHue = hues[i + 1];
+            drawList->AddRectFilledMultiColor(
+                Vec2f(barSize.x * i / 16.0, 0.0f) + rampBarPadding, 
+                Vec2f(barSize.x * (i + 1) / 16.0, barSize.y) + rampBarPadding, 
+                startHue, endHue, endHue, startHue);
+        }
+
+        ImGui::SameLine();
+        ImGui::Text("high");
+    }
+    ImGui::End();
+    ImGui::PopFont();
+    ImGui::PopStyleVar(1);
+}
+
+//---------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------
+
+void App::appendAction(Action&& action)
+{
+    mActionStack.push_back(action);
+    if (mActionStack.size() > 16) {
+        mActionStack.pop_front();
+    }
+}
+
+void App::undoAction()
+{
+    if (mActionStack.empty()) {
+        return;
+    }
+    
+    Action action = mActionStack.back();
+    mActionStack.pop_back();
+
+    if (action.type == Action::Type::Remove) {
+        if (mCurAction.type != Action::Type::Unknown) {
+            // Skip instruction if there is an undo action running currently.
+            return;
+        }
+
+        mCurAction = action;
+        importImageFiles(action.filepathArray, false, &action.imageIdxArray);
+    } else if (action.type == Action::Type::Add) {
+        for (int i = static_cast<int>(mImageList.size()) - 1; i >= 0; --i) {
+            Texture* texture = mImageList[i].get();
+
+            const std::string& imageFilePath = texture->filepath();
+            for (const auto& path : action.filepathArray) {
+                if (imageFilePath == path) {
+                    mImageList.pop_back();
+                    break;
+                }
+            }
+        }
+
+        mTopImageIndex = action.prevTopImageIdx;
+        mCmpImageIndex = action.prevCmpImageIdx;
+    }
+}
+
+void    App::showImportImageDlg()
+{
+    static std::vector<std::string> filters = {
+        "Supported Image Files", "*.bmp; *.jpg; *.png",
+        "BMP (*.BMP)", "*.bmp",
+        "OpenEXR (*.EXR)", "*.exr",
+        "GIF (*.GIF)", "*.gif",
+        "JPEG (*.JPG, *.JPEG)", "*.jpg; *.jpeg",
+        "HDR (*.HDR)", "*.hdr",
+        "PNG (*.PNG)", "*.png"
+    };
+
+    std::vector<std::string> selection = pfd::open_file("Select image file(s)", "", filters, true).result();
+    importImageFiles(selection, true);
+}
+
+void    App::importImageFiles(const std::vector<std::string>& filepathArray, bool recordAction, std::vector<int>* imageIdxArray)
+{
+    const size_t count = filepathArray.size();
+    Action action(Action::Type::Add, mTopImageIndex, mCmpImageIndex);
+
+    {
+        const std::lock_guard<std::mutex> lock(mLoadMutex);
+
+        for (size_t i = 0; i < filepathArray.size(); ++i) {
+            const std::string& path = filepathArray[i];
+            if (Texture::isSupported(path)) {
+                int insertIdx = imageIdxArray ? (*imageIdxArray)[i] : -1;
+                LoadRequest loadRequest = std::make_tuple(path, insertIdx);
+                mLoadRequestQueue.push_back(loadRequest);
+
+                action.filepathArray.push_back(path);
+            } else {
+                promptWarning(fmt::format("Unsupported image type for \"{}\"", path));
+            }
+        }
+    }
+
+    if (recordAction) {
+        appendAction(std::move(action));
+    }
+
+    if (count == 1) {
+        mConditionVar.notify_one();
+    } else if (count > 1) {
+        mConditionVar.notify_all();  // Wake up all workers to load images.
+    }
+}
+
+Texture* App::getTopImage()
+{
+    return mTopImageIndex >= 0 ? mImageList[mTopImageIndex].get() : nullptr;
+}
+
+void    App::removeTopImage(bool recordAction)
+{
+    TextureUPtr texture = std::move(mImageList[mTopImageIndex]);
+    mImageList.erase(mImageList.begin() + mTopImageIndex);
+
+    if (recordAction) {
+        Action action(Action::Type::Remove, mTopImageIndex, mCmpImageIndex);
+        action.filepathArray.push_back(texture->filepath());
+        action.imageIdxArray.push_back(texture->index());
+        appendAction(std::move(action));
+    }
+    
+    texture.reset();
+    
+    const int imageNum = static_cast<int>(mImageList.size());
+    if (imageNum < 2) {
+        mCmpImageIndex = -1;
+        mCompositeFlags = CompositeFlags::Top;
+    }
+    
+    if (imageNum == 0) {
+        mTopImageIndex = -1;
+    } else {
+        mTopImageIndex = std::min(mTopImageIndex, imageNum - 1);
+    }
+}
+
+void    App::clearImages(bool recordAction)
+{
+    Action action(Action::Type::Remove, mTopImageIndex, mCmpImageIndex);
+
+    for (const auto& texture : mImageList) {
+        action.filepathArray.push_back(texture->filepath());
+        action.imageIdxArray.push_back(texture->index());
+    }
+
+    if (recordAction) {
+        mActionStack.push_back(action);
+    }
+
+    mImageList.clear();
+    mTopImageIndex = mCmpImageIndex = -1;
+    mCompositeFlags = CompositeFlags::Top;
+}
+
+void    App::resetImageTransform(const Vec2f &imgSize, bool fitWindow)
+{
+    auto io = ImGui::GetIO();
+    Vec2f visibleSize(io.DisplaySize.x, io.DisplaySize.y - (mToolbarHeight + mFooterHeight));
+    mImageScalePivot = visibleSize * 0.5f;
+    mImageScalePivot.y += mToolbarHeight;
+    mImageScale = 1.0f;
+    mPrevImageScale = -1.0f;
+    mImageTransform = Mat3f(1.0f);
+    
+    if (fitWindow) {
+        mImageScale = std::min(visibleSize.x / imgSize.x, visibleSize.y / imgSize.y);
+        Mat3f xform(1.0f);
+        mImageTransform[0][0] = mImageScale;
+        mImageTransform[1][1] = mImageScale;
+        mImageTransform[2] = Vec3f(-mImageScale * mImageScalePivot.x + mImageScalePivot.x, -mImageScale * mImageScalePivot.y + mImageScalePivot.y, 1.0f);
+    }
+}
+
+Vec2f App::getImageOffset(const Vec2f& viewportSize, const Vec2f& imageSize) const
+{
+    Vec3f offset((viewportSize - imageSize) * 0.5f, 1.0f);
+    offset = mImageTransform * offset;
+    return glm::round(Vec2f(offset) + Vec2f(0.5f)) - Vec2f(0.5f);  // Round to pixel center.
+}
+
+
+bool App::getImageCoordinates(Vec2f viewportCoords, Vec2f& outImageCoords, const Texture& image) const
+{
+    viewportCoords.y = ImGui::GetIO().DisplaySize.y - viewportCoords.y;
+    
+    const Vec2f imageSize = image.size();
+    Vec2f imageOffset = getImageOffset(ImGui::GetIO().DisplaySize, image.size());
+
+    if (mCompositeFlags == CompositeFlags::SideBySide) {
+        float splitPosX = mViewSplitPos * ImGui::GetIO().DisplaySize.x;
+        if (viewportCoords.x > splitPosX) {
+            viewportCoords.x = glm::round(viewportCoords.x - splitPosX);
+        }
+
+        imageOffset.x = glm::round(imageOffset.x * 0.5f) + 0.5f;
+    }
+
+    Vec2f regionMask = glm::step(imageOffset, viewportCoords) - glm::step(imageOffset + imageSize * mImageScale, viewportCoords);
+    
+    if (regionMask.x == 1.0f && regionMask.y == 1.0f) {
+        outImageCoords = (viewportCoords - imageOffset) / mImageScale - Vec2f(0.5f);
+        outImageCoords.y = imageSize.y - outImageCoords.y - 1;
+        outImageCoords = glm::max(outImageCoords, Vec2f(0.0f));
+        return true;
+    }
+
+    return false;
+}
+
+float App::getPropWindowWidth() const
+{
+    ImGuiWindow* window = ImGui::FindWindowByName(kImagePropWindowName);
+    return window == nullptr ? 250.0f : window->Size.x;
+}
+
+int App::getPixelMarkerFlags() const
+{
+    if (!mShowPixelMarker) {
+        return 0;
+    }
+
+    PixelMarkerFlags flags = mPixelMarkerFlags;
+    if (inCompareMode()) {
+        flags &= PixelMarkerFlags::DiffMask;  // Only keeps pixel differnce marker.
+    } else {
+        flags &= ~PixelMarkerFlags::DiffMask; // Clear any flags for difference modes.
+    }
+
+    return static_cast<int>(flags);
+}
+
+inline void    App::toggleSplitView()
+{
+    if (mCmpImageIndex != -1) {
+        mCompositeFlags = toggleFlags(mCompositeFlags & ~CompositeFlags::SideBySide, CompositeFlags::Split);
+    }
+}
+
+inline void    App::toggleSideBySideView()
+{
+    if (mCmpImageIndex != -1) {
+        mCompositeFlags = toggleFlags(mCompositeFlags & ~CompositeFlags::Split, CompositeFlags::SideBySide);
+    }
+}
+
+inline bool    App::inCompareMode() const
+{
+    return (mCompositeFlags & (CompositeFlags::Split | CompositeFlags::SideBySide)) != CompositeFlags::Top;
+}
+
+inline bool    App::shouldShowSplitter() const
+{
+    return inCompareMode() && (getPixelMarkerFlags() & static_cast<int>(PixelMarkerFlags::DiffMask)) == 0;
+}
+
+
+//! This function is executed in multiple worker threads. It mainly decode image 
+//! to internal buffer and push entity to mUploadTaskQueue, then the main GL render
+//! thread would upload texture to GPU.
+void    App::processImportTasks()
+{
+    while (true) {
+        
+        bool keepProcessing = false;
+
+        LoadRequest loadRequest;
+
+        {
+            std::unique_lock<std::mutex> lock(mLoadMutex);
+            
+            mConditionVar.wait(lock, [this](){
+                return !mLoadRequestQueue.empty() || mAboutToTerminate;
+            });
+
+            if (mAboutToTerminate) {
+                break;
+            }
+
+            loadRequest = mLoadRequestQueue.front();
+            mLoadRequestQueue.pop_front();
+
+            keepProcessing = mLoadRequestQueue.empty();
+        }
+
+        const std::string& imagePath = std::get<0>(loadRequest);
+
+        if (!imagePath.empty()) {
+            ScopeMarker((std::string("Load texture") + imagePath).c_str());
+            auto newTexture = std::make_unique<Texture>();
+            if (!newTexture->loadFromFile(imagePath)) {
+                return;
+            }
+
+            newTexture->index() = std::get<1>(loadRequest);
+
+            std::unique_lock<std::mutex> lock(mUploadMutex);
+            mUploadTaskQueue.push_back(std::move(newTexture));
+
+            if (keepProcessing) {
+                mConditionVar.notify_one();
+            }
+        }
+    }
+}
+
+void    App::onFileDrop(int count, const char* filepaths[])
+{
+    std::vector<std::string> filepathArray;
+    filepathArray.reserve(count);
+    for (int i = 0; i < count; ++i) {
+        filepathArray.push_back(filepaths[i]);
+    }
+
+    importImageFiles(filepathArray, true);
+}
+
+}  // namespace baktsiu
