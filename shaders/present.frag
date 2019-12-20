@@ -124,7 +124,7 @@ vec3 getHeatColor(float value)
 {
     float r = clamp(value, 0, 1.0);
     float g = sin(180.0 * radians(value));
-    float b = cos(90.0 * radians(value));
+    float b = cos(60.0 * radians(value));
     return vec3(r, g, b);
 }
 
@@ -276,10 +276,10 @@ vec4 showImage(vec2 wh, vec2 offset, vec2 imageSize, vec2 cursorPos,
     result = color1;
 
     bool inDiffMode = (uPixelMarkerFlags & 0x3) != 0;
+    bool enableHeatMap = (uPixelMarkerFlags & 0x2) >> 1 != 0;
     if (inDiffMode) {
         vec4 color2 = texture(image2, imageUV);
         float squareError = getColorDistance(color1.rgb, color2.rgb);
-        bool enableHeatMap = (uPixelMarkerFlags & 0x2) >> 1 != 0;
         result.rgb = mix(color1.rgb, vec3(1.0, 0.0, 1.0), clamp(squareError, 0.0, 1.0));
         result.rgb = mix(result.rgb, getHeatColor(squareError), enableHeatMap);
     } else {
@@ -288,7 +288,7 @@ vec4 showImage(vec2 wh, vec2 offset, vec2 imageSize, vec2 cursorPos,
 
     vec3 linearColor = result.rgb;
     result = overlayPixelMarker(result, uPixelMarkerFlags);
-    result.rgb = outputTransform(result.rgb, uOutTransformType, uDisplayGamma);
+    result.rgb = outputTransform(result.rgb, uOutTransformType, mix(uDisplayGamma, 1.0, enableHeatMap));
     result.rgb = mix(result.rgb, vec3(0.7), showPixelBorder(wh, offset, uImageScale));
     result.rgb = mix(result.rgb, vec3(1.0, 1.0, 0.0), showPixelBorderHighlight(wh, cursorPos, offset, uImageScale));
 
@@ -363,8 +363,8 @@ void main()
     vec4 color2 = texture(uImage2, imageUV);
 
     bool inDiffMode = (uPixelMarkerFlags & 0x3) != 0;
+    bool enableHeatMap = ((uPixelMarkerFlags & 0x2) >> 1) != 0;
     if (inDiffMode) { // Should only active in compare mode.
-        bool enableHeatMap = ((uPixelMarkerFlags & 0x2) >> 1) != 0;
         float squareError = getColorDistance(color1.rgb, color2.rgb);
         oColor = mix(color2, color1, vUV.x <= uSplitPos);
         oColor.rgb = mix(oColor.rgb, vec3(1.0, 0.0, 1.0), clamp(squareError, 0.0, 1.0));
@@ -377,7 +377,7 @@ void main()
 
     vec3 linearColor = oColor.rgb;
     oColor = overlayPixelMarker(oColor, uPixelMarkerFlags);
-    oColor.rgb = outputTransform(oColor.rgb, uOutTransformType, uDisplayGamma);
+    oColor.rgb = outputTransform(oColor.rgb, uOutTransformType, mix(uDisplayGamma, 1.0, enableHeatMap));
     oColor.rgb = mix(oColor.rgb, vec3(0.7), showPixelBorder(wh, uOffset, uImageScale));
     oColor.rgb = mix(oColor.rgb, vec3(1.0, 1.0, 0.0), showPixelBorderHighlight(wh, uCursorPos, uOffset, uImageScale));
 

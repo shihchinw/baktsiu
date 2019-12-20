@@ -1484,7 +1484,7 @@ void App::showHeatRangeOverlay(const Vec2f& pos, float width)
         for (size_t i = 0; i <= 16; i++) {
             float r = i / 16.0f;
             float g = glm::sin(180.0f * glm::radians(r));
-            float b = glm::cos(90.0f * glm::radians(r));
+            float b = glm::cos(60.0f * glm::radians(r));
             hues[i] = IM_COL32(r * 255, g * 255, b * 255, 255);
         }
 
