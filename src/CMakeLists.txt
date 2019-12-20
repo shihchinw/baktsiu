@@ -52,6 +52,9 @@ add_definitions(-D_CRT_SECURE_NO_WARNINGS -DVERSION="${VERSION}")
 
 if(WIN32)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup")
+    set(GL_LIBS glu32 OpenGL32)
+else()
+    set(GL_LIBS GL)
 endif()
 
 add_executable(${PROJECT_NAME} ${SRC_FILES} ${IMGUI_SRC_FILES} 
@@ -61,7 +64,7 @@ source_group("External Files\\imgui"  FILES ${IMGUI_SRC_FILES})
 source_group("External Files\\fmt"    FILES ${FMT_SRC_FILES})
 source_group("External Files\\docopt" FILES ${DOCOPT_SRC_FILES})
 
-target_link_libraries(${PROJECT_NAME} PRIVATE glu32 OpenGL32 glfw ${OPENEXR_LIB})
+target_link_libraries(${PROJECT_NAME} PRIVATE glfw ${GL_LIBS} ${OPENEXR_LIB})
 set_target_properties(${PROJECT_NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME})
 

@@ -146,10 +146,10 @@ vec3 getCheckerColor(vec2 uv, vec2 windowSize)
 vec4 overlayPixelMarker(vec4 color, int markerFlags)
 {
     bool isOverflow = all(greaterThan(color.rgb, vec3(1.0))) && ((markerFlags & 0x4) != 0);
-    color = mix(color, vec4(1.0, 0.0, 0.0, 1.0), isOverflow);
+    color = mix(color, vec4(1.0, 0.0, 0.0, 1.0), vec4(isOverflow));
 
     bool isUnderflow = all(lessThan(color.rgb, vec3(1e-5))) && ((markerFlags & 0x8) != 0);
-    color = mix(color, vec4(0.0, 0.0, 1.0, 1.0), isUnderflow);
+    color = mix(color, vec4(0.0, 0.0, 1.0, 1.0), vec4(isUnderflow));
 
     return color;
 }
@@ -252,7 +252,7 @@ vec3 drawRGBValues(vec2 wh, vec2 offset, float imageScale, vec3 linearColor, vec
     opacity *= getRGBValueMatte(xy / imageScale, linearColor);
 
     float luminance = dot(displayColor.rgb, vec3(0.3, 0.59, 0.11));    // Rough estimated luminance.
-    vec3 matteColor = mix(vec3(0.85), vec3(0.15), luminance > 0.5);
+    vec3 matteColor = mix(vec3(0.85), vec3(0.15), vec3(luminance > 0.5));
     displayColor = clamp(displayColor, vec3(0.0), vec3(1.0));
     return mix(displayColor, matteColor, opacity);
 }
@@ -281,7 +281,7 @@ vec4 showImage(vec2 wh, vec2 offset, vec2 imageSize, vec2 cursorPos,
         vec4 color2 = texture(image2, imageUV);
         float squareError = getColorDistance(color1.rgb, color2.rgb);
         result.rgb = mix(color1.rgb, vec3(1.0, 0.0, 1.0), clamp(squareError, 0.0, 1.0));
-        result.rgb = mix(result.rgb, getHeatColor(squareError), enableHeatMap);
+        result.rgb = mix(result.rgb, getHeatColor(squareError), vec3(enableHeatMap));
     } else {
         result.rgb = colorTransform(color1.rgb, uPresentMode);
     }
@@ -289,8 +289,8 @@ vec4 showImage(vec2 wh, vec2 offset, vec2 imageSize, vec2 cursorPos,
     vec3 linearColor = result.rgb;
     result = overlayPixelMarker(result, uPixelMarkerFlags);
     result.rgb = outputTransform(result.rgb, uOutTransformType, mix(uDisplayGamma, 1.0, enableHeatMap));
-    result.rgb = mix(result.rgb, vec3(0.7), showPixelBorder(wh, offset, uImageScale));
-    result.rgb = mix(result.rgb, vec3(1.0, 1.0, 0.0), showPixelBorderHighlight(wh, cursorPos, offset, uImageScale));
+    result.rgb = mix(result.rgb, vec3(0.7), vec3(showPixelBorder(wh, offset, uImageScale)));
+    result.rgb = mix(result.rgb, vec3(1.0, 1.0, 0.0), vec3(showPixelBorderHighlight(wh, cursorPos, offset, uImageScale)));
 
     if (!inDiffMode) {
         result.rgb = drawRGBValues(wh, offset, uImageScale, linearColor, result.rgb);
@@ -323,7 +323,7 @@ vec4 renderSideBySide(vec2 wh, vec4 offset, vec2 cursorPos, vec2 imageSize, vec2
     wh.x = round(wh.x - splitPos * uWindowSize.x);
     vec4 color2 = showImage(wh, offset.zw, imageSize, rightCursorPos, uImage2, uImage1, uInImageProp2, uInImageProp1);
 
-    vec4 result = mix(color1, color2, uv.x > splitPos);
+    vec4 result = mix(color1, color2, vec4(uv.x > splitPos));
 
     if (result.a == 0.0) {
         // Draw background checker.
@@ -346,7 +346,7 @@ void main()
     if (uSideBySide == 1) {
         vec4 offset = vec4(uOffset, uOffsetExtra);
         oColor = renderSideBySide(wh, offset, uCursorPos, uImageSize, vUV, uSplitPos);
-        oColor = mix(oColor, vec4(1.0), isSplitter);
+        oColor = mix(oColor, vec4(1.0), vec4(isSplitter));
         return;
     }
 
@@ -354,7 +354,7 @@ void main()
     if (regionMask.x * regionMask.y == 0.0) {
         // When outside of image region, just draw background checker.
         oColor.rgb = getCheckerColor(vUV, uWindowSize);
-        oColor = mix(oColor, vec4(1.0), isSplitter && showSplitter);
+        oColor = mix(oColor, vec4(1.0), vec4(isSplitter && showSplitter));
         return;
     }
 
@@ -366,24 +366,24 @@ void main()
     bool enableHeatMap = ((uPixelMarkerFlags & 0x2) >> 1) != 0;
     if (inDiffMode) { // Should only active in compare mode.
         float squareError = getColorDistance(color1.rgb, color2.rgb);
-        oColor = mix(color2, color1, vUV.x <= uSplitPos);
+        oColor = mix(color2, color1, vec4(vUV.x <= uSplitPos));
         oColor.rgb = mix(oColor.rgb, vec3(1.0, 0.0, 1.0), clamp(squareError, 0.0, 1.0));
-        oColor.rgb = mix(oColor.rgb, getHeatColor(squareError), enableHeatMap);
+        oColor.rgb = mix(oColor.rgb, getHeatColor(squareError), vec3(enableHeatMap));
     } else {
         color1.rgb = colorTransform(color1.rgb, uPresentMode);
         color2.rgb = colorTransform(color2.rgb, uPresentMode);
-        oColor = mix(color2, color1, vUV.x <= uSplitPos);
+        oColor = mix(color2, color1, vec4(vUV.x <= uSplitPos));
     }
 
     vec3 linearColor = oColor.rgb;
     oColor = overlayPixelMarker(oColor, uPixelMarkerFlags);
     oColor.rgb = outputTransform(oColor.rgb, uOutTransformType, mix(uDisplayGamma, 1.0, enableHeatMap));
-    oColor.rgb = mix(oColor.rgb, vec3(0.7), showPixelBorder(wh, uOffset, uImageScale));
-    oColor.rgb = mix(oColor.rgb, vec3(1.0, 1.0, 0.0), showPixelBorderHighlight(wh, uCursorPos, uOffset, uImageScale));
+    oColor.rgb = mix(oColor.rgb, vec3(0.7), vec3(showPixelBorder(wh, uOffset, uImageScale)));
+    oColor.rgb = mix(oColor.rgb, vec3(1.0, 1.0, 0.0), vec3(showPixelBorderHighlight(wh, uCursorPos, uOffset, uImageScale)));
 
     if (!inDiffMode) {
         oColor.rgb = drawRGBValues(wh, uOffset, uImageScale, linearColor, oColor.rgb);
     }
 
-    oColor = mix(oColor, vec4(1.0), showSplitter && isSplitter);
+    oColor = mix(oColor, vec4(1.0), vec4(showSplitter && isSplitter));
 }

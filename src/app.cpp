@@ -34,6 +34,10 @@ shader.init(name, vtxName##_vert, fragName##_frag)
 shader.initFromFiles(name, "shaders/"##STRING(vtxName)##".vert", "shaders/"##STRING(fragName)##".frag")
 #endif
 
+#ifndef _MSC_VER
+#define sprintf_s snprintf
+#endif
+
 namespace
 {
 
@@ -445,7 +449,7 @@ void App::run(CompositeFlags initFlags)
         // Caution: the cursor is hidden when using imgui's drawn cursor, when the root window is unfocused.
         io.MouseDrawCursor = (ImGui::GetMouseCursor() == ImGuiMouseCursor_ResizeAll);
 
-        //ImGui::ShowDemoWindow();
+        // ImGui::ShowDemoWindow();
 
         ImGui::Render();
 
@@ -1196,7 +1200,7 @@ void App::initFooter()
     ImGui::Text("%s", mImageScaleInfo);
 
     if (mTopImageIndex >= 0) {
-        auto& imageSize = mImageList[mTopImageIndex]->size();
+        const Vec2f& imageSize = mImageList[mTopImageIndex]->size();
         ImGui::SameLine(g.Style.FramePadding.x + g.FontSize * 4.0f);
         ImGui::Text("| %.0f x %.0f", imageSize.x, imageSize.y);
 
