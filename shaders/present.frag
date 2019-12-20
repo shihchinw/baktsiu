@@ -5,6 +5,7 @@ uniform sampler2D uImage2;
 uniform sampler2D uFontImage;   // Font bit map for digit characters .0-9
 
 uniform vec2    uOffset;
+uniform vec2    uOffsetExtra;
 uniform vec2    uImageSize;
 uniform vec2    uWindowSize;
 uniform vec2    uCursorPos;
@@ -300,20 +301,27 @@ vec4 showImage(vec2 wh, vec2 offset, vec2 imageSize, vec2 cursorPos,
 
 
 //! @param wh Pixel coordinates in [width, height].
+//! @param offset Image offset in pixels. xy: left column, zw: right column offset.
+//! @param curposPos Current mouse position in window coordinates.
 //! @param imageSize Scaled image size for display.
-//! @param offset Image offset in pixels.
-vec4 renderSideBySide(vec2 wh, vec2 offset, vec2 imageSize, vec2 uv, float splitPos)
+vec4 renderSideBySide(vec2 wh, vec4 offset, vec2 cursorPos, vec2 imageSize, vec2 uv, float splitPos)
 {
-    vec2 cursorPos = uCursorPos;
-    if (uCursorPos.x > splitPos * uWindowSize.x) {
-        cursorPos.x = uCursorPos.x - splitPos * uWindowSize.x;
+    vec2 leftCursorPos, rightCursorPos;
+    float leftColumnWidth = splitPos * uWindowSize.x;
+    if (cursorPos.x > leftColumnWidth) {
+        rightCursorPos = vec2(cursorPos.x - leftColumnWidth, cursorPos.y);
+        vec2 ij = (rightCursorPos - offset.zw) / uImageScale;
+        leftCursorPos = round(ij * uImageScale + offset.xy);
+    } else {
+        leftCursorPos = cursorPos;
+        vec2 ij = (leftCursorPos - offset.xy) / uImageScale;
+        rightCursorPos = round(ij * uImageScale + offset.zw);
     }
 
-    offset.x = round(offset.x * 0.5) + 0.5;   // Halve image x-axis translation for side by side view.
-    vec4 color1 = showImage(wh, offset, imageSize, cursorPos, uImage1, uImage2, uInImageProp1, uInImageProp2);
+    vec4 color1 = showImage(wh, offset.xy, imageSize, leftCursorPos, uImage1, uImage2, uInImageProp1, uInImageProp2);
 
     wh.x = round(wh.x - splitPos * uWindowSize.x);
-    vec4 color2 = showImage(wh, offset, imageSize, cursorPos, uImage2, uImage1, uInImageProp2, uInImageProp1);
+    vec4 color2 = showImage(wh, offset.zw, imageSize, rightCursorPos, uImage2, uImage1, uInImageProp2, uInImageProp1);
 
     vec4 result = mix(color1, color2, uv.x > splitPos);
 
@@ -336,7 +344,8 @@ void main()
     vec2 wh = round(vUV * uWindowSize + vec2(0.5));
 
     if (uSideBySide == 1) {
-        oColor = renderSideBySide(wh, uOffset, uImageSize, vUV, uSplitPos);
+        vec4 offset = vec4(uOffset, uOffsetExtra);
+        oColor = renderSideBySide(wh, offset, uCursorPos, uImageSize, vUV, uSplitPos);
         oColor = mix(oColor, vec4(1.0), isSplitter);
         return;
     }

@@ -4,6 +4,7 @@
 #include "common.h"
 #include "shader.h"
 #include "texture.h"
+#include "view.h"
 
 #include <condition_variable>
 #include <deque>
@@ -133,26 +134,20 @@ private:
 
     //! Handle key pressed cases.
     //! @note Few key pressed events related to image transformation are handled in updateImageTransform.
-    void    onKeyPressed(ImGuiIO&);
+    void    onKeyPressed(const ImGuiIO&);
 
     void    updateImagePairFromPressedKeys();
 
     // Update image transform from user's key stroke and mouse input.
-    void    updateImageTransform(ImGuiIO&);
-
-    //! Constaint image transformation to ensure it always visible.
-    void    applyImageTransformConstraint(const Vec2f& viewportSize, const Vec2f& imageSize, const Vec2f& imageOffset);
+    void    updateImageTransform(const ImGuiIO&, bool useColumnView);
 
     void    updateImageSplitterPos(ImGuiIO&);
 
     //! Reset image transform to viewport center.
     void    resetImageTransform(const Vec2f& imgSize, bool fitWindow = false);
     
-    //! Return transformed image offset in pixels.
-    //! @param imageSize Original image size without transformation.
-    Vec2f   getImageOffset(const Vec2f& viewportSize, const Vec2f& imageSize) const;
-
-    bool    getImageCoordinates(Vec2f viewportCoords, Vec2f& outImageCoords, const Texture& image) const;
+    //! Return pixel coordinates from mouse position.
+    bool    getImageCoordinates(Vec2f viewportCoords, Vec2f& outImageCoords) const;
 
     void    appendAction(Action&& action);
 
@@ -180,12 +175,13 @@ private:
 
     bool    inCompareMode() const;
 
+    bool    inSideBySideMode() const;
+
     bool    shouldShowSplitter() const;
 
     void    toggleSplitView();
 
     void    toggleSideBySideView();
-
 
 private:
     // Request item to load image file into specific position of image layers in image property window.
@@ -219,10 +215,10 @@ private:
     PixelMarkerFlags    mPixelMarkerFlags = PixelMarkerFlags::Default;
 
     // Image transformation
-    Mat3f       mImageTransform = Mat3f(1.0f);
-    Vec2f       mImageScalePivot;
+    View        mView;
+    View        mColumnViews[2];    // Views for side by side mode.
     float       mImageScale = 1.0f;
-    float       mPrevImageScale = 1.0f;
+    float       mPrevImageScale = -1.0f;
 
     int         mTopImageIndex = -1;
     int         mCmpImageIndex = -1;

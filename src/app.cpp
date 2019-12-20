@@ -224,6 +224,10 @@ bool App::initialize(const char* title, int width, int height)
 
     mToolbarHeight = 32.0f;
     mFooterHeight = 20.0f;
+    Vec4f padding(mToolbarHeight, 0.0f, mFooterHeight, 0.0f);
+    mView.setViewportPadding(padding);
+    mColumnViews[0].setViewportPadding(padding);
+    mColumnViews[1].setViewportPadding(padding);
 
     // Fonts are converted into data arrays in pre-built stage. It uses bin2c.cmake to convert
     // resources/fonts/*.ttf into corresponding data arrays. Here we simply add fonts from 
@@ -403,13 +407,29 @@ void App::run(CompositeFlags initFlags)
         initImagePropWindow();
         
         ImGuiIO& io = ImGui::GetIO();
+
         if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow) &&
             !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)) {
             updateImageSplitterPos(io);
         }
 
         onKeyPressed(io);
-        updateImageTransform(io);
+        Texture* topImage = getTopImage();
+        Vec2f imageSize = topImage ? topImage->size() : Vec2f(1.0f);
+
+        const bool useColumnView = inSideBySideMode();
+        if (useColumnView) {
+            const float leftColumnWidth = io.DisplaySize.x * mViewSplitPos;
+            mColumnViews[0].resize(Vec2f(leftColumnWidth, io.DisplaySize.y));
+            mColumnViews[1].resize(Vec2f(io.DisplaySize.x - leftColumnWidth, io.DisplaySize.y));
+            mColumnViews[0].setImageSize(imageSize);
+            mColumnViews[1].setImageSize(imageSize);
+        } else {
+            mView.resize(io.DisplaySize);
+            mView.setImageSize(imageSize);
+        }
+
+        updateImageTransform(io, useColumnView);
 
         const bool enableCompareView = inCompareMode();
         if (shouldShowSplitter() && mShowImageNameOverlay) {
@@ -429,7 +449,6 @@ void App::run(CompositeFlags initFlags)
 
         ImGui::Render();
 
-        Texture* topImage = getTopImage();
         if (topImage) {
             gradingTexImage(*topImage, mTopImageRenderTexIdx);
         }
@@ -451,29 +470,30 @@ void App::run(CompositeFlags initFlags)
         glActiveTexture(GL_TEXTURE0);
 
         // We have to forcely use nearest filter to properly show numerical values within a pixel.
-        const bool forceNearestFilter = mImageScale > 5.0f;
+        const View& topView = useColumnView ? mColumnViews[0] : mView;
+        const View& bottomView = useColumnView ? mColumnViews[1] : mView;
+        const float imageScale = topView.getImageScale();
+        const bool forceNearestFilter = imageScale > 5.0f;
 
         if (topImage) {
             mRenderTextures[mTopImageRenderTexIdx].setFilter(mUseLinearFilter && !forceNearestFilter);
 
             Vec2f imageSize = topImage->size();
-            mPresentShader.setUniform("uImageSize", imageSize * mImageScale);
-
-            Vec2f offset = getImageOffset(io.DisplaySize, imageSize);
-            mPresentShader.setUniform("uOffset", offset);
+            mPresentShader.setUniform("uImageSize", imageSize * imageScale);
+            mPresentShader.setUniform("uOffset", topView.getImageOffset());
             mPresentShader.setUniform("uImage1", 0);
         } else {
             mPresentShader.setUniform("uImageSize", Vec2f(0.0f));
         }
 
         mPresentShader.setUniform("uEnablePixelHighlight", !mIsMovingSplitter);
-        mPresentShader.setUniform("uCursorPos", Vec2f(io.MousePos.x, io.DisplaySize.y - io.MousePos.y) + Vec2f(0.5f));        
+        mPresentShader.setUniform("uCursorPos", Vec2f(io.MousePos.x, io.DisplaySize.y - io.MousePos.y) + Vec2f(0.5f));
         mPresentShader.setUniform("uSideBySide", mCompositeFlags == CompositeFlags::SideBySide);
         mPresentShader.setUniform("uPixelMarkerFlags", getPixelMarkerFlags());
         mPresentShader.setUniform("uPresentMode", mCurrentPresentMode);
         mPresentShader.setUniform("uOutTransformType", mOutTransformType);
         mPresentShader.setUniform("uWindowSize", Vec2f(io.DisplaySize));
-        mPresentShader.setUniform("uImageScale", mImageScale);
+        mPresentShader.setUniform("uImageScale", imageScale);
         mPresentShader.setUniform("uSplitPos", enableCompareView ? mViewSplitPos : 1.0f);
         mPresentShader.setUniform("uDisplayGamma", mDisplayGamma);
         //mPresentShader.setUniform("uApplyToneMapping", mEnableToneMapping);
@@ -484,6 +504,7 @@ void App::run(CompositeFlags initFlags)
             glActiveTexture(GL_TEXTURE1);
             mRenderTextures[mTopImageRenderTexIdx ^ 1].setFilter(mUseLinearFilter && !forceNearestFilter);
             mPresentShader.setUniform("uImage2", 1);
+            mPresentShader.setUniform("uOffsetExtra", bottomView.getImageOffset());
         }
 
         glActiveTexture(GL_TEXTURE2);
@@ -532,7 +553,7 @@ void    App::gradingTexImage(Texture &texture, int renderTexIdx)
     mRenderTextures[renderTexIdx].unbind();
 }
 
-void    App::onKeyPressed(ImGuiIO& io)
+void    App::onKeyPressed(const ImGuiIO& io)
 {
     if (ImGui::IsKeyPressed(0x102)) { // tab
         mShowImagePropWindow ^= true;
@@ -589,15 +610,16 @@ void    App::updateImageSplitterPos(ImGuiIO& io)
     }
 }
 
-void    App::updateImageTransform(ImGuiIO& io)
+void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
 {
     Texture* topImage = getTopImage();
     if (!topImage) {
         return;
     }
-    
-    Vec2f imageSize = topImage->size();
-    Vec2f imageOffset = getImageOffset(io.DisplaySize, imageSize);
+
+    Vec2f scalePivot(-1.0f);
+
+    mImageScale = inSideBySideMode() ? mColumnViews[0].getImageScale() : mView.getImageScale();
 
     bool onFocus = !ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow);
     float oldImageScale = mImageScale;
@@ -612,20 +634,37 @@ void    App::updateImageTransform(ImGuiIO& io)
             // Scale the image when both left and right buttons are pressed.
             mImageScale *= (1.0f - io.MouseDelta.y * 0.01f);
         } else if (!mIsMovingSplitter && ImGui::IsMouseDown(0)) {
-            // Translate image
-            mImageTransform[2].x += io.MouseDelta.x;
-            mImageTransform[2].y -= io.MouseDelta.y; // y-axis of window coordinates is opposite to texture coordinates.
-
-            applyImageTransformConstraint(io.DisplaySize, imageSize * mImageScale, imageOffset);
-
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+
+            Vec2f translate(io.MouseDelta.x, -io.MouseDelta.y);
+
+            if (!useColumnView) {
+                mView.translate(translate);
+            } else {
+                mColumnViews[0].translate(translate);
+                mColumnViews[1].translate(translate);
+            }
             return;
         }
     }
 
+    bool mouseAtRightColumn = false;
+    auto fetchScalePivot = [](const ImGuiIO& io, bool useColumnView, float viewSplitPos, bool& mouseAtRightColumn) {
+        Vec2f scalePivot(io.MousePos.x, io.DisplaySize.y - io.MousePos.y);
+        if (useColumnView) {
+            float leftColumnWidth = io.DisplaySize.x * viewSplitPos;
+            if (scalePivot.x > leftColumnWidth) {
+                scalePivot.x -= leftColumnWidth;
+                mouseAtRightColumn = true;
+            }
+        }
+
+        return scalePivot;
+    };
+
     // Zoom in/out from mouse scroll.
     if (io.MouseWheel != 0.0f) {
-        mImageScalePivot = Vec2f(io.MousePos.x, io.DisplaySize.y - io.MousePos.y);
+        scalePivot = fetchScalePivot(io, useColumnView, mViewSplitPos, mouseAtRightColumn);
 
         if (mImageScale == 2) {
             if (io.MouseWheel >= 0.0f) {
@@ -651,11 +690,14 @@ void    App::updateImageTransform(ImGuiIO& io)
     } else if (ImGui::IsKeyPressed(0x14E) || ImGui::IsKeyPressed(0x3D)) {
         float newScale = std::min(256.0f, mImageScale * 2.0f);
         mImageScale = newScale > 1.0f ? glm::roundEven(newScale) : newScale;
-    } else if (ImGui::IsKeyPressed(0x5A) && mPrevImageScale < 0.0f) {
-        mImageScalePivot = Vec2f(io.MousePos.x, io.DisplaySize.y - io.MousePos.y);
+    } 
+    else if (ImGui::IsKeyPressed(0x5A) && mPrevImageScale < 0.0f) {
+        scalePivot = fetchScalePivot(io, useColumnView, mViewSplitPos, mouseAtRightColumn);
+
         mPrevImageScale = mImageScale;
-        mImageScale = 84.0f;
-    } else if (ImGui::IsKeyPressed(0x14C) || (io.KeyShift && ImGui::IsKeyPressed(0x046))) { // '*' or shift+f
+        mImageScale = 72.0f;
+    }
+    else if (ImGui::IsKeyPressed(0x14C) || (io.KeyShift && ImGui::IsKeyPressed(0x046))) { // '*' or shift+f
         resetImageTransform(topImage->size(), true);
         return;
     } else if (ImGui::IsKeyPressed(0x14B) || ImGui::IsKeyPressed(0x046)) { // '/' or 'f'
@@ -663,43 +705,51 @@ void    App::updateImageTransform(ImGuiIO& io)
         return;
     }
 
-    // If scale pivot is outside the image region, we just shift it to the center of image.
-    Vec2f mask = glm::step(imageOffset, mImageScalePivot) - glm::step(imageOffset + imageSize * oldImageScale, mImageScalePivot);
-    if (mask.x * mask.y == 0.0f) {
-        mImageScalePivot = glm::clamp(imageOffset + imageSize * oldImageScale * 0.5f, Vec2f(0.0f), Vec2f(io.DisplaySize));
-    }
-
     mImageScale = glm::clamp(mImageScale, 0.125f, 256.0f);
-    
-    // Compose transformation matrix.
     float relativeScale = mImageScale / oldImageScale;
-    if (relativeScale > 1e-4f) {
-        Mat3f xform(1.0f);
-        xform[0][0] = relativeScale;
-        xform[1][1] = relativeScale;
-        xform[2] = Vec3f(-relativeScale * mImageScalePivot.x + mImageScalePivot.x, -relativeScale * mImageScalePivot.y + mImageScalePivot.y, 1.0f);
-        mImageTransform = xform * mImageTransform;
+    if (abs(relativeScale - 1.0f) < 1e-4f) {
+        return;
     }
 
-    //applyImageTransformConstraint(io.DisplaySize, imageSize * mImageScale, imageOffset);
+    if (!useColumnView) {
+        mView.scale(relativeScale, scalePivot.x > 0.0f ? &scalePivot : nullptr);
+    } else if (scalePivot.x < 0.0f) {
+        // Use previous scale pivot.
+        mColumnViews[0].scale(relativeScale);
+        mColumnViews[1].scale(relativeScale);
+    } else {
+        const int focusColumnIdx = mouseAtRightColumn ? 1 : 0;
+        mColumnViews[focusColumnIdx].scale(relativeScale, &scalePivot);
+        scalePivot = mColumnViews[focusColumnIdx].getImageScalePivot();
+
+        // Retrieve the scale pivot in the other column view, we first get the
+        // pixel coordinates, then use it to get corresponding viewport coordinates.
+        Vec2f pixelCoords = mColumnViews[focusColumnIdx].getImageCoords(scalePivot);
+        
+        const int theOtherColumnIdx = focusColumnIdx ^ 1;
+        Vec2f theOtherScalePivot = mColumnViews[theOtherColumnIdx].getViewportCoords(pixelCoords);
+        // Align pivot height.
+        theOtherScalePivot.y = scalePivot.y;
+        mColumnViews[theOtherColumnIdx].scale(relativeScale, &theOtherScalePivot);
+    }
 }
 
 
-// Restrict transformation to avoid image moving out of viewport.
-void    App::applyImageTransformConstraint(const Vec2f& viewportSize, const Vec2f& imageSize, const Vec2f& imageOffset)
-{
-    const auto safePadding = Vec2f(100.0f);
-
-    Vec2f minOffset = safePadding - imageSize;
-    Vec2f maxOffset = viewportSize - safePadding;
-    Vec2f coffset(0.0f);
-
-    coffset = glm::mix(coffset, minOffset - imageOffset, glm::lessThan(imageOffset, minOffset));
-    coffset = glm::mix(coffset, maxOffset - imageOffset, glm::greaterThan(imageOffset, maxOffset));
-
-    mImageTransform[2][0] += coffset.x;
-    mImageTransform[2][1] += coffset.y;
-}
+//// Restrict transformation to avoid image moving out of viewport.
+//void    App::applyImageTransformConstraint(const Vec2f& viewportSize, const Vec2f& imageSize, const Vec2f& imageOffset)
+//{
+//   /* const auto safePadding = Vec2f(100.0f);
+//
+//    Vec2f minOffset = safePadding - imageSize;
+//    Vec2f maxOffset = viewportSize - safePadding;
+//    Vec2f coffset(0.0f);
+//
+//    coffset = glm::mix(coffset, minOffset - imageOffset, glm::lessThan(imageOffset, minOffset));
+//    coffset = glm::mix(coffset, maxOffset - imageOffset, glm::greaterThan(imageOffset, maxOffset));
+//
+//    mImageTransform[2][0] += coffset.x;
+//    mImageTransform[2][1] += coffset.y;*/
+//}
 
 void App::updateImagePairFromPressedKeys()
 {
@@ -1133,7 +1183,7 @@ void App::initFooter()
     ImGui::PopStyleVar(4);
 
     if (mImageScale > 1.0f) {
-        sprintf_s(mImageScaleInfo, IM_ARRAYSIZE(mImageScaleInfo), "%.0fx", mImageScale);
+        sprintf_s(mImageScaleInfo, IM_ARRAYSIZE(mImageScaleInfo), "%.1fx", mImageScale);
     } else {
         sprintf_s(mImageScaleInfo, IM_ARRAYSIZE(mImageScaleInfo), "%.2f%%\n", mImageScale * 100.0f);
     }
@@ -1146,8 +1196,9 @@ void App::initFooter()
         ImGui::Text("| %.0f x %.0f", imageSize.x, imageSize.y);
 
         Vec2f imageCoords;
-        if (getImageCoordinates(g.IO.MousePos, imageCoords, *mImageList[mTopImageIndex])) {
+        if (getImageCoordinates(g.IO.MousePos, imageCoords)) {
             ImGui::SameLine();
+            imageCoords.y = imageSize.y - imageCoords.y - 1;
             ImGui::Text("(%.0f, %.0f)", imageCoords.x, imageCoords.y);
         }
     }
@@ -1600,57 +1651,34 @@ void    App::clearImages(bool recordAction)
 
 void    App::resetImageTransform(const Vec2f &imgSize, bool fitWindow)
 {
-    auto io = ImGui::GetIO();
-    Vec2f visibleSize(io.DisplaySize.x, io.DisplaySize.y - (mToolbarHeight + mFooterHeight));
-    mImageScalePivot = visibleSize * 0.5f;
-    mImageScalePivot.y += mToolbarHeight;
     mImageScale = 1.0f;
-    mPrevImageScale = -1.0f;
-    mImageTransform = Mat3f(1.0f);
-    
-    if (fitWindow) {
-        mImageScale = std::min(visibleSize.x / imgSize.x, visibleSize.y / imgSize.y);
-        Mat3f xform(1.0f);
-        mImageTransform[0][0] = mImageScale;
-        mImageTransform[1][1] = mImageScale;
-        mImageTransform[2] = Vec3f(-mImageScale * mImageScalePivot.x + mImageScalePivot.x, -mImageScale * mImageScalePivot.y + mImageScalePivot.y, 1.0f);
-    }
+
+    mView.reset(fitWindow);
+    mColumnViews[0].reset(fitWindow);
+    mColumnViews[1].reset(fitWindow);
 }
 
-Vec2f App::getImageOffset(const Vec2f& viewportSize, const Vec2f& imageSize) const
-{
-    Vec3f offset((viewportSize - imageSize) * 0.5f, 1.0f);
-    offset = mImageTransform * offset;
-    return glm::round(Vec2f(offset) + Vec2f(0.5f)) - Vec2f(0.5f);  // Round to pixel center.
-}
-
-
-bool App::getImageCoordinates(Vec2f viewportCoords, Vec2f& outImageCoords, const Texture& image) const
+bool App::getImageCoordinates(Vec2f viewportCoords, Vec2f& outImageCoords) const
 {
     viewportCoords.y = ImGui::GetIO().DisplaySize.y - viewportCoords.y;
-    
-    const Vec2f imageSize = image.size();
-    Vec2f imageOffset = getImageOffset(ImGui::GetIO().DisplaySize, image.size());
 
-    if (mCompositeFlags == CompositeFlags::SideBySide) {
-        float splitPosX = mViewSplitPos * ImGui::GetIO().DisplaySize.x;
-        if (viewportCoords.x > splitPosX) {
-            viewportCoords.x = glm::round(viewportCoords.x - splitPosX);
+    bool isOutsideImage = false;
+    if (!inSideBySideMode()) {
+        outImageCoords = mView.getImageCoords(viewportCoords, &isOutsideImage);
+    } else {
+        auto& io = ImGui::GetIO();
+        const float leftColumnWidth = glm::round(io.DisplaySize.x * mViewSplitPos);
+        if (viewportCoords.x > leftColumnWidth) {
+            viewportCoords.x -= leftColumnWidth;
+            outImageCoords = mColumnViews[1].getImageCoords(viewportCoords, &isOutsideImage);
+        } else {
+            outImageCoords = mColumnViews[0].getImageCoords(viewportCoords, &isOutsideImage);
         }
-
-        imageOffset.x = glm::round(imageOffset.x * 0.5f) + 0.5f;
     }
 
-    Vec2f regionMask = glm::step(imageOffset, viewportCoords) - glm::step(imageOffset + imageSize * mImageScale, viewportCoords);
-    
-    if (regionMask.x == 1.0f && regionMask.y == 1.0f) {
-        outImageCoords = (viewportCoords - imageOffset) / mImageScale - Vec2f(0.5f);
-        outImageCoords.y = imageSize.y - outImageCoords.y - 1;
-        outImageCoords = glm::max(outImageCoords, Vec2f(0.0f));
-        return true;
-    }
+    outImageCoords = glm::floor(outImageCoords);
 
-    return false;
+    return !isOutsideImage;
 }
 
 float App::getPropWindowWidth() const
@@ -1692,6 +1720,11 @@ inline void    App::toggleSideBySideView()
 inline bool    App::inCompareMode() const
 {
     return (mCompositeFlags & (CompositeFlags::Split | CompositeFlags::SideBySide)) != CompositeFlags::Top;
+}
+
+inline bool    App::inSideBySideMode() const
+{
+    return (mCompositeFlags & CompositeFlags::SideBySide) != CompositeFlags::Top;
 }
 
 inline bool    App::shouldShowSplitter() const
