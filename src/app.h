@@ -153,7 +153,6 @@ private:
 
     void    undoAction();
 
-
     Texture*    getTopImage();
 
     void    removeTopImage(bool recordAction);
@@ -237,6 +236,7 @@ private:
     float       mExposureValue = 0.0f;
 
     bool        mIsMovingSplitter = false;
+    bool        mIsScalingImage = false;
     bool        mEnableToneMapping = false;
     bool        mShowPixelValues = false;
     bool        mAboutToTerminate = false;

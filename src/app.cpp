@@ -486,7 +486,7 @@ void App::run(CompositeFlags initFlags)
             mPresentShader.setUniform("uImageSize", Vec2f(0.0f));
         }
 
-        mPresentShader.setUniform("uEnablePixelHighlight", !mIsMovingSplitter);
+        mPresentShader.setUniform("uEnablePixelHighlight", !mIsMovingSplitter && !mIsScalingImage);
         mPresentShader.setUniform("uCursorPos", Vec2f(io.MousePos.x, io.DisplaySize.y - io.MousePos.y) + Vec2f(0.5f));
         mPresentShader.setUniform("uSideBySide", mCompositeFlags == CompositeFlags::SideBySide);
         mPresentShader.setUniform("uPixelMarkerFlags", getPixelMarkerFlags());
@@ -630,9 +630,14 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
     }
 
     if (onFocus) {
+        if (ImGui::IsMouseReleased(0) || ImGui::IsMouseReleased(1)) {
+            mIsScalingImage = false;
+        }
+
         if (ImGui::IsMouseDown(0) && ImGui::IsMouseDown(1)) {
             // Scale the image when both left and right buttons are pressed.
             mImageScale *= (1.0f - io.MouseDelta.y * 0.01f);
+            mIsScalingImage = true;
         } else if (!mIsMovingSplitter && ImGui::IsMouseDown(0)) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
 
