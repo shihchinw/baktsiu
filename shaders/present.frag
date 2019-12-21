@@ -9,6 +9,7 @@ uniform vec2    uOffsetExtra;
 uniform vec2    uImageSize;
 uniform vec2    uWindowSize;
 uniform vec2    uCursorPos;
+uniform vec3    uPixelBorderHighlightColor;
 
 uniform float   uSplitPos;
 uniform float   uImageScale;
@@ -232,16 +233,17 @@ bool showPixelBorder(vec2 wh, vec2 offset, float imageScale)
 
 bool showPixelBorderHighlight(vec2 wh, vec2 cursor, vec2 offset, float imageScale)
 {
-    if (!uEnablePixelHighlight || imageScale < 12.0) {
+    if (!uEnablePixelHighlight || imageScale < 8.0) {
         return false;
     }
 
+    float borderWidth = 1 + floor(step(46.0, imageScale));
     vec2 xy = floor((wh - offset) / imageScale);
     vec2 st = floor((cursor - offset) / imageScale);
     vec2 lower = mod(wh - offset, imageScale);
-    vec2 upper = mod(wh - offset + vec2(1, 1), imageScale);
+    vec2 upper = mod(wh - offset + vec2(borderWidth), imageScale);
 
-    return all(equal(xy - st, vec2(0.0))) && (any(lessThanEqual(lower, vec2(1.0))) || any(lessThanEqual(upper, vec2(1.0))));
+    return all(equal(xy - st, vec2(0.0))) && (any(lessThanEqual(lower, vec2(borderWidth))) || any(lessThanEqual(upper, vec2(borderWidth))));
 }
 
 vec3 drawRGBValues(vec2 wh, vec2 offset, float imageScale, vec3 linearColor, vec3 displayColor)
@@ -290,7 +292,7 @@ vec4 showImage(vec2 wh, vec2 offset, vec2 imageSize, vec2 cursorPos,
     result = overlayPixelMarker(result, uPixelMarkerFlags);
     result.rgb = outputTransform(result.rgb, uOutTransformType, mix(uDisplayGamma, 1.0, enableHeatMap));
     result.rgb = mix(result.rgb, vec3(0.7), vec3(showPixelBorder(wh, offset, uImageScale)));
-    result.rgb = mix(result.rgb, vec3(1.0, 1.0, 0.0), vec3(showPixelBorderHighlight(wh, cursorPos, offset, uImageScale)));
+    result.rgb = mix(result.rgb, uPixelBorderHighlightColor, vec3(showPixelBorderHighlight(wh, cursorPos, offset, uImageScale)));
 
     if (!inDiffMode) {
         result.rgb = drawRGBValues(wh, offset, uImageScale, linearColor, result.rgb);
@@ -361,7 +363,7 @@ void main()
     vec2 imageUV = (wh - uOffset) / uImageSize;
     vec4 color1 = texture(uImage1, imageUV);
     vec4 color2 = texture(uImage2, imageUV);
-
+   
     bool inDiffMode = (uPixelMarkerFlags & 0x3) != 0;
     bool enableHeatMap = ((uPixelMarkerFlags & 0x2) >> 1) != 0;
     if (inDiffMode) { // Should only active in compare mode.
@@ -379,7 +381,7 @@ void main()
     oColor = overlayPixelMarker(oColor, uPixelMarkerFlags);
     oColor.rgb = outputTransform(oColor.rgb, uOutTransformType, mix(uDisplayGamma, 1.0, enableHeatMap));
     oColor.rgb = mix(oColor.rgb, vec3(0.7), vec3(showPixelBorder(wh, uOffset, uImageScale)));
-    oColor.rgb = mix(oColor.rgb, vec3(1.0, 1.0, 0.0), vec3(showPixelBorderHighlight(wh, uCursorPos, uOffset, uImageScale)));
+    oColor.rgb = mix(oColor.rgb, uPixelBorderHighlightColor, vec3(showPixelBorderHighlight(wh, uCursorPos, uOffset, uImageScale)));
 
     if (!inDiffMode) {
         oColor.rgb = drawRGBValues(wh, uOffset, uImageScale, linearColor, oColor.rgb);

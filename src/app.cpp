@@ -503,6 +503,7 @@ void App::run(CompositeFlags initFlags)
         //mPresentShader.setUniform("uApplyToneMapping", mEnableToneMapping);
         mPresentShader.setUniform("uCharUvRanges", mCharUvRanges);
         mPresentShader.setUniform("uCharUvXforms", mCharUvXforms);
+        mPresentShader.setUniform("uPixelBorderHighlightColor", mPixelBorderHighlightColor);
 
         if (enableCompareView && mCmpImageIndex >= 0) {
             glActiveTexture(GL_TEXTURE1);
@@ -640,7 +641,7 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
 
         if (ImGui::IsMouseDown(0) && ImGui::IsMouseDown(1)) {
             // Scale the image when both left and right buttons are pressed.
-            mImageScale *= (1.0f - io.MouseDelta.y * 0.01f);
+            mImageScale *= (1.0f - glm::roundEven(io.MouseDelta.y) * 0.0078125f);
             mIsScalingImage = true;
         } else if (!mIsMovingSplitter && ImGui::IsMouseDown(0)) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);

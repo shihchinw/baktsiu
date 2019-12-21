@@ -232,6 +232,7 @@ private:
     float       mViewSplitPos = 0.5f;   // The horizontal position of viewport splitter.
     float       mPropWindowHSplitRatio = 0.65f;
 
+    Vec3f       mPixelBorderHighlightColor = Vec3f(0.153f, 0.980f, 0.718f);
     float       mDisplayGamma = 2.2f;
     float       mExposureValue = 0.0f;
 
