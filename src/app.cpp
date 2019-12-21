@@ -566,6 +566,8 @@ void    App::onKeyPressed(const ImGuiIO& io)
         clearImages(true);
     } else if (io.KeyCtrl && ImGui::IsKeyPressed(0x5A)) { // Ctrl+z
         undoAction();
+    } else if (io.KeyCtrl && ImGui::IsKeyPressed(0x4F)) { // Ctrl+o
+        showImportImageDlg();
     } else if (ImGui::IsKeyPressed(0x53)) { // s
         toggleSplitView();
     } else if (ImGui::IsKeyPressed(0x43)) { // c
@@ -673,7 +675,7 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
     };
 
     // Zoom in/out from mouse scroll.
-    if (io.MouseWheel != 0.0f) {
+    if (onFocus && io.MouseWheel != 0.0f) {
         scalePivot = fetchScalePivot(io, useColumnView, mViewSplitPos, mouseAtRightColumn);
 
         if (mImageScale == 2) {
@@ -1585,7 +1587,9 @@ void    App::importImageFiles(const std::vector<std::string>& filepathArray, boo
         const std::lock_guard<std::mutex> lock(mLoadMutex);
 
         for (size_t i = 0; i < filepathArray.size(); ++i) {
-            const std::string& path = filepathArray[i];
+            std::string path = filepathArray[i];
+            std::replace(path.begin(), path.end(), '\\', '/');
+
             if (Texture::isSupported(path)) {
                 int insertIdx = imageIdxArray ? (*imageIdxArray)[i] : -1;
                 LoadRequest loadRequest = std::make_tuple(path, insertIdx);
@@ -1797,7 +1801,9 @@ void    App::onFileDrop(int count, const char* filepaths[])
     std::vector<std::string> filepathArray;
     filepathArray.reserve(count);
     for (int i = 0; i < count; ++i) {
-        filepathArray.push_back(filepaths[i]);
+        std::string normpath = filepaths[i];
+        std::replace(normpath.begin(), normpath.end(), '\\', '/');
+        filepathArray.push_back(normpath);
     }
 
     importImageFiles(filepathArray, true);

@@ -121,7 +121,7 @@ bool Texture::loadFromFile(const std::string& filepath)
     mBuffer = buffer;
 
     mFilePath = filepath;
-    mFileName = filepath.substr(filepath.find_last_of("\\") + 1);
+    mFileName = filepath.substr(filepath.find_last_of("/") + 1);
 
     return true;
 }
