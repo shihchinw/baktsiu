@@ -462,7 +462,9 @@ void App::run(CompositeFlags initFlags)
             gradingTexImage(*cmpImage, mTopImageRenderTexIdx ^ 1);
         }
 
-        glViewport(0, 0, static_cast<GLsizei>(io.DisplaySize.x), static_cast<GLsizei>(io.DisplaySize.y));
+        // We have to apply framebuffer scale for hidh DPI display.
+        const Vec2f viewportSize = io.DisplaySize * io.DisplayFramebufferScale;
+        glViewport(0, 0, static_cast<GLsizei>(viewportSize.x), static_cast<GLsizei>(viewportSize.y));
         glClearColor(0.45f, 0.55f, 0.6f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         glDepthMask(GL_FALSE);
