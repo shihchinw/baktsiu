@@ -14,6 +14,7 @@
 #pragma warning(pop)
 
 #include <fstream>
+#include <memory>
 
 #include <stb_image.h>
 

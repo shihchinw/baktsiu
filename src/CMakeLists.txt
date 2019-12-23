@@ -17,14 +17,14 @@ endif()
 # be included in main application sources.
 # Glob up resource files
 file(GLOB RESOURCE_FILES 
-    "${BakTsiu_SOURCE_DIR}/resources/fonts/*.ttf"
-    "${BakTsiu_SOURCE_DIR}/resources/icons/*.png")
+    "${PROJECT_SOURCE_DIR}/resources/fonts/*.ttf"
+    "${PROJECT_SOURCE_DIR}/resources/icons/*.png")
 
-add_executable(Res2c ${BakTsiu_SOURCE_DIR}/resources/res2c.cpp ${DOCOPT_SRC_FILES})
+add_executable(res2c ${PROJECT_SOURCE_DIR}/resources/res2c.cpp ${DOCOPT_SRC_FILES})
 
 add_custom_command(
   OUTPUT resources.cpp resources.h
-  COMMAND Res2c ARGS --binary ${RESOURCE_FILES}
+  COMMAND res2c ARGS --binary ${RESOURCE_FILES}
   DEPENDS ${RESOURCE_FILES}
   COMMENT "Running res2c to convert fonts and icons"
   PRE_BUILD VERBATIM)
@@ -32,7 +32,7 @@ add_custom_command(
 set(EXTRA_SRC_FILES ${EXTRA_SRC_FILES} resources.cpp)
 
 if(EMBED_SHADERS)
-  file(GLOB SHADER_FILES "${BakTsiu_SOURCE_DIR}/shaders/*.*")
+  file(GLOB SHADER_FILES "${PROJECT_SOURCE_DIR}/shaders/*.*")
   message(STATUS "Shader files ${SHADER_FILES}")
   
   set(EXTRA_SRC_FILES ${EXTRA_SRC_FILES} shader_resources.h)
@@ -40,7 +40,7 @@ if(EMBED_SHADERS)
 
   add_custom_command(
     OUTPUT shader_resources.h
-    COMMAND Res2c ARGS --shaders ${SHADER_FILES}
+    COMMAND res2c ARGS --shaders ${SHADER_FILES}
     DEPENDS ${SHADER_FILES}
     COMMENT "Running res2c to merge shader files"
     PRE_BUILD VERBATIM)
@@ -53,7 +53,7 @@ add_definitions(-D_CRT_SECURE_NO_WARNINGS -DVERSION="${VERSION}")
 if(WIN32)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup")
     set(GL_LIBS glu32 OpenGL32)
-else()
+elseif(UNIX AND NOT APPLE)
     set(GL_LIBS GL)
 endif()
 

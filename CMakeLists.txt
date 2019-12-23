@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.1)
-project(BakTsiu)
+project(baktsiu)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 set(VERSION "0.1.0" CACHE STRING " " FORCE)
@@ -21,6 +21,10 @@ endif()
 if(WIN32)
     set(EXTRA_SRC_FILES "${CMAKE_CURRENT_SOURCE_DIR}/resources/icon.rc")
 endif()
+
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_subdirectory(ext)
 add_subdirectory(src)

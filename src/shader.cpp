@@ -74,6 +74,10 @@ bool Shader::init(const std::string& name,
         throw std::runtime_error("Shader linking failed!");
     }
 
+    if (mVaoId == 0) {
+        glGenVertexArrays(1, &mVaoId);
+    }
+
     return true;
 }
 
@@ -106,6 +110,7 @@ void Shader::release()
     glDeleteProgram(mProgram);          mProgram = 0;
     glDeleteShader(mVertexShader);      mVertexShader = 0;
     glDeleteShader(mFragmentShader);    mFragmentShader = 0;
+    glDeleteVertexArrays(1, &mVaoId);   mVaoId = 0;
 }
 
 GLint Shader::uniform(const std::string& name) const {
@@ -120,7 +125,11 @@ GLint Shader::uniform(const std::string& name) const {
 
 void Shader::drawTriangle()
 {
+    // Even though we populate vertices' positions and uv coordinates from vertex ID directly,
+    // we still need a dummy VAO on Mac OS for rendering.
+    glBindVertexArray(mVaoId);
     glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindVertexArray(0);
 }
 
 }  // namespace baktsiu

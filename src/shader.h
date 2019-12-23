@@ -37,7 +37,7 @@ public:
     /// Initialize a uniform parameter with a 4x4 matrix (float)
     template <typename T>
     void setUniform(const std::string& name, const Mat4f& mat) {
-        glUniformMatrix4fv(uniform(name), 1, GL_FALSE, &mat.value[0][0]);
+        glUniformMatrix4fv(uniform(name), 1, GL_FALSE, &mat[0][0]);
     }
 
     void setUniform(const std::string& name, const std::vector<Vec4f>& values)
@@ -48,7 +48,7 @@ public:
     /// Initialize a uniform parameter with a 3x3 matrix (float)
     template <typename T>
     void setUniform(const std::string& name, const Mat3f& mat) {
-        glUniformMatrix3fv(uniform(name), 1, GL_FALSE, &mat.value[0][0]);
+        glUniformMatrix3fv(uniform(name), 1, GL_FALSE, &mat[0][0]);
     }
 
     /// Initialize a uniform parameter with a boolean value
@@ -101,6 +101,7 @@ public:
 
 private:
     std::string     mName;
+    GLuint          mVaoId = 0u;
     GLuint          mVertexShader = 0u;
     GLuint          mFragmentShader = 0u;
     GLuint          mProgram = 0u;
