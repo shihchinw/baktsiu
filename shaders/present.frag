@@ -268,7 +268,8 @@ vec4 showImage(vec2 wh, vec2 offset, vec2 imageSize, vec2 cursorPos,
 {
     vec4 result = vec4(0.0);
 
-    vec2 regionMask = step(offset, wh) - step(offset + imageSize, wh);
+    // Add one extra pixel to draw the top and right pixel border.
+    vec2 regionMask = step(offset, wh) - step(offset + imageSize + 1, wh);
     if (regionMask.x * regionMask.y == 0.0) {
         return result;
     }
@@ -352,7 +353,8 @@ void main()
         return;
     }
 
-    vec2 regionMask = step(uOffset, wh) - step(uOffset + uImageSize, wh);
+    // Add one extra pixel to draw the top and right pixel border.
+    vec2 regionMask = step(uOffset, wh) - step(uOffset + uImageSize + 1, wh);
     if (regionMask.x * regionMask.y == 0.0) {
         // When outside of image region, just draw background checker.
         oColor.rgb = getCheckerColor(vUV, uWindowSize);
