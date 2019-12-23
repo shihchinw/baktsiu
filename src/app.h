@@ -6,6 +6,7 @@
 #include "texture.h"
 #include "view.h"
 
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <memory>
@@ -195,6 +196,7 @@ private:
     std::condition_variable     mConditionVar;
     std::deque<Action>          mActionStack;
     Action                      mCurAction;
+    std::atomic<int>            mImportRequestNum = 0;
 
     GLFWwindow* mWindow = nullptr;
     ImFont*     mSmallFont = nullptr;

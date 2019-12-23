@@ -338,6 +338,7 @@ void App::processTextureUploadTasks()
     for (auto& newTexture : newTextureList) {
         ScopeMarker("Upload Texture");
         newTexture->upload();
+        --mImportRequestNum;
         const int index = newTexture->index();
         if (index == -1) {
             newTexture->index() = static_cast<int>(mImageList.size());
@@ -359,7 +360,8 @@ void App::processTextureUploadTasks()
         }
     }
 
-    if (!newTextureList.empty() && !isUndo) {
+    // Update selected image only when the last import request is done.
+    if (!newTextureList.empty() && !isUndo && mImportRequestNum == 0) {
         mTopImageIndex = static_cast<int>(mImageList.size()) - 1;
         resetImageTransform(getTopImage()->size());
 
@@ -385,7 +387,7 @@ void App::run(CompositeFlags initFlags)
     bool shouldChangeComposition = true;
 
     // Spawn worker threads to handle import images.
-    const unsigned int workerNum = std::max(1u, std::thread::hardware_concurrency() / 2);
+    const unsigned int workerNum = std::thread::hardware_concurrency();
     PushRangeMarker("Initialize Worker");
     std::vector<std::thread> workers(workerNum);
     for (auto& worker : workers) {
@@ -1782,6 +1784,8 @@ void    App::processImportTasks()
 
         if (!imagePath.empty()) {
             ScopeMarker((std::string("Load texture") + imagePath).c_str());
+            ++mImportRequestNum;
+
             auto newTexture = std::make_unique<Texture>();
             if (!newTexture->loadFromFile(imagePath)) {
                 return;
