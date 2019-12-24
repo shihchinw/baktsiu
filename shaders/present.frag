@@ -227,8 +227,14 @@ float getRGBValueMatte(vec2 uv, vec3 color)
 
 bool showPixelBorder(vec2 wh, vec2 offset, float imageScale)
 {
-    vec2 xy = mod(wh - offset, imageScale);
-    return any(lessThanEqual(abs(xy), vec2(1.0))) && (imageScale > 5.0);
+    // vec2 xy = mod(wh - offset, imageScale);
+    // return any(lessThan(xy, vec2(1.0))) && (imageScale > 5.0);
+
+    // We have to use floor to avoid inconsistent pixel border width.
+    // We can't use the expressions above, they are not exactly the same, 
+    // even though I don't know why.
+    vec2 xy = floor(mod(wh - offset, imageScale));
+    return any(equal(xy, vec2(0.0))) && (imageScale > 5.0);
 }
 
 bool showPixelBorderHighlight(vec2 wh, vec2 cursor, vec2 offset, float imageScale)
@@ -323,7 +329,7 @@ vec4 renderSideBySide(vec2 wh, vec4 offset, vec2 cursorPos, vec2 imageSize, vec2
 
     vec4 color1 = showImage(wh, offset.xy, imageSize, leftCursorPos, uImage1, uImage2, uInImageProp1, uInImageProp2);
 
-    wh.x = round(wh.x - splitPos * uWindowSize.x);
+    wh.x = round(wh.x - splitPos * uWindowSize.x + 0.5) - 0.5;
     vec4 color2 = showImage(wh, offset.zw, imageSize, rightCursorPos, uImage2, uImage1, uInImageProp2, uInImageProp1);
 
     vec4 result = mix(color1, color2, vec4(uv.x > splitPos));
@@ -344,7 +350,7 @@ void main()
     bool isSplitter = abs(vUV.x - uSplitPos) * uWindowSize.x < 1.0;
     bool showSplitter = uSplitPos != 1.0 && (uPixelMarkerFlags & 0x3) == 0; // Not in difference or heatmap view.
     
-    vec2 wh = round(vUV * uWindowSize + vec2(0.5));
+    vec2 wh = round(vUV * uWindowSize + vec2(0.5)) - vec2(0.5);
 
     if (uSideBySide == 1) {
         vec4 offset = vec4(uOffset, uOffsetExtra);

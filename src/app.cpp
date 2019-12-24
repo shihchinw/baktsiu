@@ -676,6 +676,7 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
             }
         }
 
+        scalePivot = glm::round(scalePivot + Vec2f(0.5f)) - Vec2f(0.5f);
         return scalePivot;
     };
 
@@ -702,11 +703,9 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
 
     // Transfrom from keyboard
     if (ImGui::IsKeyPressed(0x14D) || ImGui::IsKeyPressed(0x2D)) {
-        float newScale = std::max(0.125f, mImageScale * 0.5f);
-        mImageScale = newScale > 1.0f ? glm::roundEven(newScale) : newScale;
+        mImageScale *= 0.5f;
     } else if (ImGui::IsKeyPressed(0x14E) || ImGui::IsKeyPressed(0x3D)) {
-        float newScale = std::min(256.0f, mImageScale * 2.0f);
-        mImageScale = newScale > 1.0f ? glm::roundEven(newScale) : newScale;
+        mImageScale *= 2.0f;
     } 
     else if (ImGui::IsKeyPressed(0x5A) && mPrevImageScale < 0.0f) {
         scalePivot = fetchScalePivot(io, useColumnView, mViewSplitPos, mouseAtRightColumn);
@@ -723,7 +722,7 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
     }
 
     mImageScale = glm::clamp(mImageScale, 0.125f, 256.0f);
-    float relativeScale = mImageScale / oldImageScale;
+    const float relativeScale = mImageScale / oldImageScale;
     if (abs(relativeScale - 1.0f) < 1e-4f) {
         return;
     }

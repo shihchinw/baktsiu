@@ -109,6 +109,8 @@ Vec2f   View::getConstrainedPivot(Vec2f pivot) const
         pivot.y = (imageOffset.y + scaledImageSize.y);
     }
 
+    pivot = glm::round(pivot + Vec2f(0.5f)) - Vec2f(0.5f);
+
     // Use reflected pivot would make noncontiguous jump.
     /*if (pivot.x < imageOffset.x) {
         pivot.x = imageOffset.x * 2.0f - pivot.x;
@@ -159,6 +161,7 @@ void    View::reset(bool fitViewport)
     mImageScalePivot = visibleSize * 0.5f;
     mImageScalePivot.x += mViewPadding.w;
     mImageScalePivot.y += mViewPadding.z;
+    mImageScalePivot = glm::round(mImageScalePivot + Vec2f(0.5f)) - Vec2f(0.5f);
 
     if (fitViewport) {
         mImageScale = std::min(visibleSize.x / mImageSize.x, visibleSize.y / mImageSize.y);
