@@ -452,7 +452,7 @@ void App::run(CompositeFlags initFlags)
         // Caution: the cursor is hidden when using imgui's drawn cursor, when the root window is unfocused.
         io.MouseDrawCursor = (ImGui::GetMouseCursor() == ImGuiMouseCursor_ResizeAll);
 
-        // ImGui::ShowDemoWindow();
+        //ImGui::ShowDemoWindow();
 
         ImGui::Render();
 
@@ -713,10 +713,10 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
         mPrevImageScale = mImageScale;
         mImageScale = 72.0f;
     }
-    else if (ImGui::IsKeyPressed(0x14C) || (io.KeyShift && ImGui::IsKeyPressed(0x046))) { // '*' or shift+f
+    else if (io.KeyShift && ImGui::IsKeyPressed(0x046)) { // shift+f
         resetImageTransform(topImage->size(), true);
         return;
-    } else if (ImGui::IsKeyPressed(0x14B) || ImGui::IsKeyPressed(0x046)) { // '/' or 'f'
+    } else if (ImGui::IsKeyPressed(0x14B) || ImGui::IsKeyPressed(0x2F) || ImGui::IsKeyPressed(0x046)) { // '/' or 'f'
         resetImageTransform(topImage->size());
         return;
     }
@@ -1349,7 +1349,7 @@ void    App::initHomeWindow(const char* name)
                 ImGui::Text("Pixel Navigation");
                 ImGui::Text("Zoom In/Out");
                 ImGui::Text("Zoom In/Out in Power-of-Two");
-                ImGui::Text("Zoom to 100%");
+                ImGui::Text("Zoom to 1:1");
                 ImGui::Text("Fit to Window");
                 ImGui::NextColumn();
 
@@ -1358,7 +1358,7 @@ void    App::initHomeWindow(const char* name)
                 ImGui::Text("Mouse Scroll");
                 ImGui::Text("+/-");
                 ImGui::Text("/ or F");
-                ImGui::Text("* or Shift+F");
+                ImGui::Text("Shift+F");
                 ImGui::NextColumn();
 
                 ImGui::Separator();
