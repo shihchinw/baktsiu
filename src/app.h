@@ -196,7 +196,7 @@ private:
     std::condition_variable     mConditionVar;
     std::deque<Action>          mActionStack;
     Action                      mCurAction;
-    std::atomic<int>            mImportRequestNum = 0;
+    std::atomic<int>            mImportRequestNum = { 0 };
 
     GLFWwindow* mWindow = nullptr;
     ImFont*     mSmallFont = nullptr;
