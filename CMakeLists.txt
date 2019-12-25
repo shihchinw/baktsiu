@@ -14,7 +14,14 @@ if(USE_OPENEXR AND NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/ext/openexr/Ope
         "\"git submodule update --init --recursive\"")
 endif()
 
-if (MSVC)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    message(STATUS "Setting build type to 'Release' as none was specified.")
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release"
+        "MinSizeRel" "RelWithDebInfo")
+endif()
+
+if(MSVC)
     set_property(GLOBAL PROPERTY USE_FOLDERS ON) # Enable subfolder filters in VC project
 endif()
 
