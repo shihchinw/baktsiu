@@ -2,13 +2,11 @@
 
 # Bak-Tsiu — Examining Every Pixel Differences
 
-<iframe src="https://player.vimeo.com/video/381616409" width="640" height="360" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
-
 ## Introduction
 
 Bak-Tsiu is an image viewer designed for comparing and examining differences among multiple images. 
 
-The motivation behind the implementation of Bak-Tsiu is that I found there are no convenient tools to examine pixel differences among multiple rendering results of different anti-aliasing algorithms and their corresponding configurations. Bak-Tsiu is a tool derived from my personal workflow, it provides split and side-by-side view along with close-up RGB values inspection. For more details, please see the [quickstart guide](docs/quickstart_guide.md).
+The motivation behind the implementation of Bak-Tsiu is that I found there are no convenient tools to examine pixel differences among multiple rendering results of different anti-aliasing algorithms and their corresponding configurations. Bak-Tsiu is a tool derived from my personal workflow, it provides split and side-by-side view along with close-up RGB values inspection. For more details, please see the [quickstart guide](docs/quickstart_guide.md) or watch the [intro video](https://vimeo.com/381616409).
 
 ![Column View](docs/images/side_by_side_navigation.jpg)
 
