@@ -835,11 +835,14 @@ void    App::initToolbar()
     if (ImGui::Button(ICON_FA_HOME, buttonSize)) {
         ImGui::OpenPopup(popupWindowName);
     }
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Home Window"); }
+
 
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_FILE_IMPORT, buttonSize)) {
         showImportImageDlg();
     }
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Import Images"); }
 
     //ImGui::SameLine();
     //ImGui::Button(ICON_FA_SAVE, buttonSize);
@@ -933,7 +936,7 @@ void    App::initToolbar()
     ImGui::SameLine();
     ToggleButton(ICON_FA_EXCLAMATION_TRIANGLE, &mShowPixelMarker, buttonSize);
     if (ImGui::IsItemClicked(1)) { ImGui::OpenPopup("PixelMarkMenu"); }
-    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Show Pixel Exclamation"); }
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Pixel Warning Markers"); }
 
     if (ImGui::BeginPopup("PixelMarkMenu")) {
         const bool enableCompareView = inCompareMode();
@@ -970,9 +973,11 @@ void    App::initToolbar()
     // Show buttons at right hand side.
     ImGui::SameLine(g.IO.DisplaySize.x - (buttonSize.x + g.Style.ItemSpacing.x) * 2.0f);
     ToggleButton(ICON_FA_COMMENT_ALT, &mShowImageNameOverlay, buttonSize);
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Image Name Tags"); }
 
     ImGui::SameLine(g.IO.DisplaySize.x - buttonSize.x - g.Style.ItemSpacing.x);
     ToggleButton(ICON_FA_CHART_BAR, &mShowImagePropWindow, buttonSize);
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Property Window"); }
 
     ImGui::PopStyleColor(1);
     ImGui::PopStyleVar(7);
@@ -1311,16 +1316,16 @@ void    App::initHomeWindow(const char* name)
     ImGui::SetNextWindowContentWidth(500.0f);
     if (ImGui::BeginPopupModal(name, &open, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
         //ImGui::Dummy(Vec2f(550.0f, ImGui::GetFrameHeight()));
-        if (ImGui::BeginTabBar("HotkeysBar", ImGuiTabBarFlags_None)) {
-            if (ImGui::BeginTabItem("Hotkeys")) {
+        if (ImGui::BeginTabBar("ControlsBar", ImGuiTabBarFlags_None)) {
+            if (ImGui::BeginTabItem("Controls")) {
                 ImGui::Columns(2, nullptr, false);
 
                 ImGui::Text("Show Home Panel");
                 ImGui::Text("Toggle Property Window");
                 ImGui::Text("Toggle Split View");
                 ImGui::Text("Toggle Side-by-Side Column View");
-                ImGui::Text("Toggle Pixel Warning");
-                ImGui::Text("Toggle Linear Filter");
+                ImGui::Text("Toggle Pixel Warning Markers");
+                ImGui::Text("Toggle Linear Image Filter");
                 ImGui::NextColumn();
 
                 ImGui::Text("F1");
@@ -1346,30 +1351,30 @@ void    App::initHomeWindow(const char* name)
 
                 ImGui::Separator();
                 ImGui::Text("Pan");
-                ImGui::Text("Pixel Navigation");
-                ImGui::Text("Zoom In/Out");
+                ImGui::Text("Zoom In/Out\n ");
                 ImGui::Text("Zoom In/Out in Power-of-Two");
-                ImGui::Text("Zoom to 1:1");
-                ImGui::Text("Fit to Window");
+                ImGui::Text("Zoom to Actual Size");
+                ImGui::Text("Fit to Viewport");
+                ImGui::Text("Pixel Sniper");
                 ImGui::NextColumn();
 
-                ImGui::Text("Left Mouse Button Drag");
-                ImGui::Text("Pressing Z");
-                ImGui::Text("Mouse Scroll");
+                ImGui::Text("Drag Left Mouse Button");
+                ImGui::Text("Mouse Scroll or\nDrag Left + Right Mouse Buttons Vertically");
                 ImGui::Text("+/-");
                 ImGui::Text("/ or F");
                 ImGui::Text("Shift+F");
+                ImGui::Text("Holding Z");
                 ImGui::NextColumn();
 
                 ImGui::Separator();
-                ImGui::Text("Switch Compared Images");
-                ImGui::Text("Previous Compared Image");
                 ImGui::Text("Next Compared Image");
+                ImGui::Text("Previous Compared Image");
+                ImGui::Text("Switch Compared Images");
                 ImGui::NextColumn();
 
-                ImGui::Text("X or Up Arrow");
-                ImGui::Text("A or Left Arrow");
                 ImGui::Text("D or Right Arrow");
+                ImGui::Text("A or Left Arrow");
+                ImGui::Text("X or Up Arrow");
                 //ImGui::NextColumn();
 
                 ImGui::Columns(1);
@@ -1383,9 +1388,9 @@ void    App::initHomeWindow(const char* name)
         
         if (ImGui::BeginTabBar("AboutBar", ImGuiTabBarFlags_None)) {
             if (ImGui::BeginTabItem("About")) {
-                ImGui::TextWrapped("Bak-Tsiu %s is a neat image viewer focusing on comparing images and examining pixel differences.", VERSION);
+                ImGui::TextWrapped("Bak-Tsiu %s, an image viewer designed for comparing images and examining pixel differences.", VERSION);
 
-                ImGui::Text(u8"\nCopyright© Shih-Chin Weng (http://shihchinw.github.io/)");
+                ImGui::Text(u8"\nCopyright© Shih-Chin Weng. https://github.com/shihchinw/baktsiu");
                 ImGui::EndTabItem();
             }
 
