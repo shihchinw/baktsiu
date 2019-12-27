@@ -35,3 +35,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_subdirectory(ext)
 add_subdirectory(src)
+
+if(WIN32)
+    install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION "bin")
+elseif(APPLE)
+    install(TARGETS ${PROJECT_NAME} BUNDLE DESTINATION "/Applications")
+else()
+    install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION "bin")
+    install(FILES resources/baktsiu.desktop DESTINATION "/usr/share/applications")
+    install(FILES resources/app.png DESTINATION "/usr/share/pixmaps" RENAME baktsiu.png)
+endif()

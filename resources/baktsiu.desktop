@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=0.1
+Name=baktsiu
+GenericName=Image Viewer
+Comment=Image Comparing and Examining Tool
+Exec=baktsiu %F
+Icon=baktsiu
+Terminal=false
+MimeType=image/*;
+Categories=Graphics;
