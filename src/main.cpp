@@ -1,4 +1,6 @@
 ﻿#include <iostream>
+#include <string>
+#include <vector>
 
 #include "app.h"
 #include "docopt/docopt.h"
@@ -21,12 +23,26 @@ R"(Bak-Tsiu, examining every image details.
 int main(int argc, char** argv)
 {
     baktsiu::App app;
+    std::vector<std::string> argList = { argv + 1, argv + argc };
+
+#ifdef __APPLE__
+    // If we launch from finder, there might be a "-psn" argument represents
+    // a unique process serial number. We have to remove it before we parse
+    // arguments with docopt.
+    for (auto iter = argList.begin(); iter != argList.end(); ++iter) {   
+        if (iter->find("-psn") == 0) {
+            argList.erase(iter);
+            break;
+        }
+    }
+#endif
+
+// return 0;
 
     constexpr bool showHelpWhenRequest = true;
     PushRangeMarker("Parse Option");
     std::map<std::string, docopt::value> args
-        = docopt::docopt(USAGE, { argv + 1, argv + argc }
-        , showHelpWhenRequest, "Bak-Tsiu v" VERSION);
+        = docopt::docopt(USAGE, argList, showHelpWhenRequest, "Bak-Tsiu v" VERSION);
     PopRangeMarker();
 
     if (app.initialize(u8"目睭 Bak Tsiu", 1280, 720))
