@@ -2,6 +2,8 @@
 
 # Bak-Tsiu — Examining Every Pixel Differences
 
+[![Build Status](https://travis-ci.org/shihchinw/baktsiu.svg?branch=master)](https://travis-ci.org/shihchinw/baktsiu)
+
 ## Introduction
 
 Bak-Tsiu is an image viewer designed for comparing and examining differences among multiple images. 

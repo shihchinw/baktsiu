@@ -1,0 +1,21 @@
+language: cpp
+compiler: clang
+sudo: false
+dist: xenial
+script:
+  - git submodule update --init --recursive
+  - mkdir build
+  - cd build
+  - cmake -G "Unix Makefiles" -DUSE_OPENEXR:BOOL=ON ..
+  - make -j 4
+addons:
+  apt:
+    packages:
+      - cmake
+      - libxrandr-dev
+      - libxinerama-dev
+      - libxcursor-dev
+      - libxi-dev
+      - mesa-common-dev
+      - libgl1-mesa-dev
+      - xorg-dev
