@@ -25,6 +25,7 @@ uniform int     uSideBySide;
 uniform vec4    uCharUvRanges[11];
 uniform vec4    uCharUvXforms[11];
 uniform bool    uEnablePixelHighlight;
+uniform bool    uApplyToneMapping;
 
 in  vec2 vUV;
 out vec4 oColor;
@@ -42,6 +43,11 @@ const mat3 AP1_2_XYZ_MAT = mat3(
      0.2722287168, 0.6740817658, 0.0536895174,
     -0.0055746495, 0.0040607335, 1.0103391003);
 
+const mat3 XYZ_2_AP1_MAT = mat3(
+     1.6410233797, -0.3248032942, -0.2364246952,
+    -0.6636628587,  1.6153315917,  0.0167563477,
+     0.0117218943, -0.0082844420,  0.9883948585);
+
 const mat3 AP1_2_BT709_MAT = mat3(
     1.7050515, -0.6217907, -0.0832587,
    -0.1302571,  1.1408029, -0.0105482,
@@ -49,13 +55,23 @@ const mat3 AP1_2_BT709_MAT = mat3(
 
 const mat3 AP1_2_P3D65_MAT = mat3(
     1.3792145, -0.3088633, -0.0703498,
-   -0.0693355,  1.082295 , -0.0129618,
-   -0.002159 , -0.0454592,  1.0476177);
+   -0.0693355,  1.0822950, -0.0129618,
+   -0.0021590, -0.0454592,  1.0476177);
 
 const mat3 AP1_2_BT2020_MAT = mat3(
     1.0258249, -0.0200529, -0.0057714,
    -0.002235 ,  1.0045849, -0.0023520,
-   -0.0050133, -0.02529  ,  1.0303028);
+   -0.0050133, -0.0252900,  1.0303028);
+
+const mat3 AP1_2_AP0_MAT = mat3(
+     0.6954522414, 0.1406786965, 0.1638690622,
+     0.0447945634, 0.8596711185, 0.0955343182,
+    -0.0055258826, 0.0040252103, 1.0015006723);
+
+const mat3 AP0_2_AP1_MAT = mat3(
+     1.4514393161, -0.2365107469, -0.2149285693,
+    -0.0765537734,  1.1762296998, -0.0996759264,
+     0.0083161484, -0.0060324498,  0.9977163014);
 
 //-----------------------------------------------------------------------------
 // Color Transform Functions
@@ -80,10 +96,198 @@ vec3 XYZtoLab(vec3 xyz)
                  200.0 * (v.y - v.z));
 }
 
+//-----------------------------------------------------------------------------
+// ACES Tone Mapping ported from: https://github.com/ampas/aces-dev/tree/master/transforms/ctl
+// https://github.com/ampas/aces-dev/blob/master/transforms/ctl/lib/ACESlib.Utilities_Color.ctl
+//-----------------------------------------------------------------------------
+#define HALF_MIN 5.96e-08
+#define HALF_MAX 65504.0
+#define PI 3.14159265359
+
+mediump float rgb_2_saturation(vec3 rgb)
+{
+    const mediump float TINY = HALF_MIN;
+    mediump float ma = max(rgb.r, max(rgb.g, rgb.b));
+    mediump float mi = min(rgb.r, min(rgb.g, rgb.b));
+    return (max(ma, TINY) - max(mi, TINY)) / max(ma, 1e-2);
+}
+
+mediump float rgb_2_yc(vec3 rgb)
+{
+    const mediump float ycRadiusWeight = 1.75;
+
+    // Converts RGB to a luminance proxy, here called YC
+    // YC is ~ Y + K * Chroma
+    // Constant YC is a cone-shaped surface in RGB space, with the tip on the
+    // neutral axis, towards white.
+    // YC is normalized: RGB 1 1 1 maps to YC = 1
+    //
+    // ycRadiusWeight defaults to 1.75, although can be overridden in function
+    // call to rgb_2_yc
+    // ycRadiusWeight = 1 -> YC for pure cyan, magenta, yellow == YC for neutral
+    // of same value
+    // ycRadiusWeight = 2 -> YC for pure red, green, blue  == YC for  neutral of
+    // same value.
+
+    mediump float r = rgb.x;
+    mediump float g = rgb.y;
+    mediump float b = rgb.z;
+    mediump float chroma = sqrt(b * (b - g) + g * (g - r) + r * (r - b));
+    return (b + g + r + ycRadiusWeight * chroma) / 3.0;
+}
+
+mediump float rgb_2_hue(vec3 rgb)
+{
+    // Returns a geometric hue angle in degrees (0-360) based on RGB values.
+    // For neutral colors, hue is undefined and the function will return a quiet NaN value.
+    mediump float hue;
+    if (rgb.x == rgb.y && rgb.y == rgb.z) {
+        hue = 0.0; // RGB triplets where RGB are equal have an undefined hue
+    } else {
+        hue = (180.0 / PI) * atan(sqrt(3.0) * (rgb.y - rgb.z), 2.0 * rgb.x - rgb.y - rgb.z);
+    }
+
+    if (hue < 0.0) hue = hue + 360.0;
+
+    return hue;
+}
+
+mediump float center_hue(mediump float hue, mediump float centerH)
+{
+    mediump float hueCentered = hue - centerH;
+    if (hueCentered < -180.0) hueCentered = hueCentered + 360.0;
+    else if (hueCentered > 180.0) hueCentered = hueCentered - 360.0;
+    return hueCentered;
+}
+
+mediump float sigmoid_shaper(mediump float x)
+{
+    // Sigmoid function in the range 0 to 1 spanning -2 to +2.
+
+    mediump float t = max(1.0 - abs(x / 2.0), 0.0);
+    mediump float y = 1.0 + sign(x) * (1.0 - t * t);
+
+    return y / 2.0;
+}
+
+mediump float glow_fwd(mediump float ycIn, mediump float glowGainIn, mediump float glowMid)
+{
+    mediump float glowGainOut;
+
+    if (ycIn <= 2.0 / 3.0 * glowMid) {
+        glowGainOut = glowGainIn;
+    } else if (ycIn >= 2.0 * glowMid) {
+        glowGainOut = 0.0;
+    } else {
+        glowGainOut = glowGainIn * (glowMid / ycIn - 1.0 / 2.0);
+    }
+
+    return glowGainOut;
+}
+
+vec3 XYZ_2_xyY(vec3 XYZ)
+{
+    mediump float divisor = max(dot(XYZ, vec3(1.0)), HALF_MIN);
+    return vec3(XYZ.xy / divisor, XYZ.y);
+}
+
+vec3 xyY_2_XYZ(vec3 xyY)
+{
+    mediump float m = xyY.z / max(xyY.y, HALF_MIN);
+    vec3 XYZ = vec3(xyY.xz, (1.0 - xyY.x - xyY.y));
+    XYZ.xz *= m;
+    return XYZ;
+}
+
+const mediump float DIM_SURROUND_GAMMA = 0.9811;
+const mediump float RRT_GLOW_GAIN = 0.05;
+const mediump float RRT_GLOW_MID = 0.08;
+const mediump float RRT_RED_SCALE = 0.82;
+const mediump float RRT_RED_PIVOT = 0.03;
+const mediump float RRT_RED_HUE = 0.0;
+const mediump float RRT_RED_WIDTH = 135.0;
+
+const mat3 RRT_SAT_MAT = mat3(
+    0.9708890, 0.0269633, 0.00214758,
+    0.0108892, 0.9869630, 0.00214758,
+    0.0108892, 0.0269633, 0.96214800);
+
+const mat3 ODT_SAT_MAT = mat3(
+    0.949056, 0.0471857, 0.00375827,
+    0.019056, 0.9771860, 0.00375827,
+    0.019056, 0.0471857, 0.93375800);
+
+
+vec3 darkSurround_to_dimSurround(vec3 linearCV)
+{
+    vec3 XYZ = mul(AP1_2_XYZ_MAT, linearCV);
+
+    vec3 xyY = XYZ_2_xyY(XYZ);
+    xyY.z = clamp(xyY.z, 0.0, HALF_MAX);
+    xyY.z = pow(xyY.z, DIM_SURROUND_GAMMA);
+    XYZ = xyY_2_XYZ(xyY);
+
+    return mul(XYZ_2_AP1_MAT, XYZ);
+}
+
+//! This is a numerical fitted version.
+//! @param aces Linear encoded color with AP0 color parmaries.
+//! @return Linear encoded color in AP1 color space.
+vec3 AcesToneMapping(vec3 aces)
+{
+    // --- Glow module --- //
+    float saturation = rgb_2_saturation(aces);
+    float ycIn = rgb_2_yc(aces);
+    float s = sigmoid_shaper((saturation - 0.4) / 0.2);
+    float addedGlow = 1.0 + glow_fwd(ycIn, RRT_GLOW_GAIN * s, RRT_GLOW_MID);
+    aces *= addedGlow;
+
+    // --- Red modifier --- //
+    float hue = rgb_2_hue(aces);
+    float centeredHue = center_hue(hue, RRT_RED_HUE);
+    float hueWeight;
+    {
+        //hueWeight = cubic_basis_shaper(centeredHue, RRT_RED_WIDTH);
+        hueWeight = smoothstep(0.0, 1.0, 1.0 - abs(2.0 * centeredHue / RRT_RED_WIDTH));
+        hueWeight *= hueWeight;
+    }
+
+    aces.r += hueWeight * saturation * (RRT_RED_PIVOT - aces.r) * (1.0 - RRT_RED_SCALE);
+
+    // --- ACES to RGB rendering space --- //
+    aces = max(vec3(0.0), aces);
+    vec3 rgbPre = mul(AP0_2_AP1_MAT, aces);
+    rgbPre = clamp(rgbPre, vec3(0.0), vec3(HALF_MAX));
+
+    // --- Global desaturation --- //
+    rgbPre = mul(RRT_SAT_MAT, rgbPre);
+
+    // Apply achromic curve that represents (post RRT + pre ODT).
+    // See the link below for the fitting process of curve coefficients
+    // https://github.com/shihchinw/numex/blob/master/notebooks/aces_color_transform.ipynb
+    const float a = 180.08877305;
+    const float b = 5.82507674;
+    const float c = 190.14106451;
+    const float d = 56.89654471;
+    const float e = 53.22517853;
+
+    vec3 rgbPost = (rgbPre * (a * rgbPre + b)) / (rgbPre * (c * rgbPre + d) + e);
+
+    // Apply gamma adjustment to compensate for dim surround
+    vec3 linearCV = darkSurround_to_dimSurround(rgbPost);
+
+    // Apply desaturation to compensate for luminance difference
+    return mul(ODT_SAT_MAT, linearCV);
+}
+
 //! Apply color filter.
 //! @param color Linear color in AP1 space.
 vec3 colorTransform(vec3 color, int mode)
 {
+    if (uApplyToneMapping) {
+        color = AcesToneMapping(mul(AP1_2_AP0_MAT, color)); // Output result is in AP1.
+    }
+
     if (mode == 1) {
         color = color.rrr;
     } else if (mode == 2) {

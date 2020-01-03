@@ -505,7 +505,7 @@ void App::run(CompositeFlags initFlags)
         mPresentShader.setUniform("uImageScale", imageScale);
         mPresentShader.setUniform("uSplitPos", enableCompareView ? mViewSplitPos : 1.0f);
         mPresentShader.setUniform("uDisplayGamma", mDisplayGamma);
-        //mPresentShader.setUniform("uApplyToneMapping", mEnableToneMapping);
+        mPresentShader.setUniform("uApplyToneMapping", mEnableToneMapping);
         mPresentShader.setUniform("uCharUvRanges", mCharUvRanges);
         mPresentShader.setUniform("uCharUvXforms", mCharUvXforms);
         mPresentShader.setUniform("uPixelBorderHighlightColor", mPixelBorderHighlightColor);
@@ -930,8 +930,8 @@ void    App::initToolbar()
     ImGui::PopItemWidth();
     ImGui::PopStyleVar(1);
 
-    /*ImGui::SameLine();
-    ToggleButton(ICON_FA_FILM, &mEnableToneMapping, buttonSize, mCurrentPresentMode == 0);*/
+    ImGui::SameLine();
+    ToggleButton(ICON_FA_FILM, &mEnableToneMapping, buttonSize, mCurrentPresentMode == 0);
 
     ImGui::SameLine();
     ToggleButton(ICON_FA_EXCLAMATION_TRIANGLE, &mShowPixelMarker, buttonSize);
