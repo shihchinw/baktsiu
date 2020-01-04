@@ -24,11 +24,15 @@ set_property(TARGET glfw PROPERTY FOLDER "Dependencies")
 if(USE_OPENEXR)
     if(WIN32)
         # Build ZLIB on Windows (requirement for OpenEXR)
-        set(ZLIB_BUILD_STATIC_LIBS ON CACHE BOOL " " FORCE)
-        set(ZLIB_BUILD_SHARED_LIBS OFF CACHE BOOL " " FORCE)
         add_subdirectory(zlib EXCLUDE_FROM_ALL)
 
         set(ZLIB_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/zlib" CACHE PATH " " FORCE)
+        # zlib uses '_d' suffix for the static debug library, and this makes us hard to set
+        # different values of ZLIB_LIBRARY for different configurations (ex. Debug/Release).
+        # Thus we set ZLIB_LIBRARY to a ' ' before adding subdirectory of OpenEXR, this is
+        # a hack to let OpenEXR skip popping errors of missing ZLIB. The true dependency is
+        # added by using "target_link_libraries(${PROJECT_NAME} PRIVATE zlibstatic)" later.
+        set(ZLIB_LIBRARY " " CACHE FILEPATH " " FORCE) 
 
         set_property(TARGET zlibstatic PROPERTY FOLDER "Dependencies")
         include_directories(${ZLIB_INCLUDE_DIR} "${CMAKE_CURRENT_BINARY_DIR}/zlib")
