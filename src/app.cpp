@@ -1128,7 +1128,7 @@ void App::initImagePropWindow()
         }
 
         ImGui::SameLine(g.Style.ItemSpacing.x);
-        ImGui::Image((void*)(intptr_t)mImageList[i]->id(), Vec2f(28.0f, 21.0f), Vec2f(0.0f, 1.0f), Vec2f(1.0f, 0.0f),
+        ImGui::Image((void*)(intptr_t)mImageList[i]->id(), Vec2f(28.0f, 21.0f), Vec2f(0.0f, 0.0f), Vec2f(1.0f, 1.0f),
             Vec4f(1.0f), mTopImageIndex == i ? activeBorderColor : borderColor);
     }
 
