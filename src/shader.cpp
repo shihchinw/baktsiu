@@ -99,6 +99,36 @@ bool Shader::initFromFiles(
     return init(name, loadStrFromFile(vertexFileName), loadStrFromFile(fragmentFileName));
 }
 
+bool Shader::initCompute(const std::string& name, const std::string& compShaderCode)
+{
+    GLuint computeShader = createShader(GL_COMPUTE_SHADER, name, compShaderCode);
+
+    if (!computeShader) {
+        return false;
+    }
+
+    mName = name;
+    mProgram = glCreateProgram();
+
+    glAttachShader(mProgram, computeShader);
+    glLinkProgram(mProgram);
+
+    GLint status;
+    glGetProgramiv(mProgram, GL_LINK_STATUS, &status);
+
+    if (status != GL_TRUE) {
+        char buffer[512];
+        glGetProgramInfoLog(mProgram, 512, nullptr, buffer);
+        promptError(fmt::format("Linker error in \"{}\":\n{}", mName, buffer));
+        mProgram = 0;
+        throw std::runtime_error("Shader linking failed!");
+    }
+
+    glDeleteShader(computeShader);
+
+    return true;
+}
+
 
 void Shader::bind()
 {
@@ -130,6 +160,11 @@ void Shader::drawTriangle()
     glBindVertexArray(mVaoId);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindVertexArray(0);
+}
+
+void Shader::compute(GLuint numGroupX, GLuint numGroupY, GLuint numGroupZ)
+{
+    glDispatchCompute(numGroupX, numGroupY, numGroupZ);
 }
 
 }  // namespace baktsiu

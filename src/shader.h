@@ -16,13 +16,15 @@ class Shader
 {
 public:
     //! Initialize graphics shader form string contents.
-    bool    init(const std::string& name, 
-                 const std::string& vertShderCode, 
+    bool    init(const std::string& name,
+                 const std::string& vertShaderCode,
                  const std::string& fragShaderCode);
 
     bool    initFromFiles(const std::string& name, 
                           const std::string& vertShderPath,
                           const std::string& fragShaderPath);
+
+    bool    initCompute(const std::string& name, const std::string& compShaderCode);
 
     const   std::string& name() const { return mName; }
 
@@ -98,6 +100,9 @@ public:
 
     // Draw 
     void drawTriangle();
+
+    // Dispatch compute
+    void compute(GLuint numGroupX, GLuint numGroupY= 1, GLuint numGroupZ = 1);
 
 private:
     std::string     mName;

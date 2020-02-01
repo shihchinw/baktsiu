@@ -1,0 +1,24 @@
+#version 430 core
+
+// Set local workgroup to 16x16
+layout(local_size_x=16, local_size_y=16, local_size_z=1) in;
+
+layout (rgba16f, binding=0) uniform readonly image2D uImage;
+layout (r32i, binding=1) uniform iimage2D uHistogram;
+
+uniform ivec2 uImageSize;
+uniform float uValueScale;
+
+void main()
+{
+    uvec2 gid = gl_GlobalInvocationID.xy;
+    
+    if (gid.x < uImageSize.x && gid.y < uImageSize.y)
+    {
+        vec4 color = imageLoad(uImage, ivec2(gid)) * uValueScale;
+        
+        imageAtomicAdd(uHistogram, ivec2(color.r, 0), 1);
+        imageAtomicAdd(uHistogram, ivec2(color.g + 256, 0), 1);
+        imageAtomicAdd(uHistogram, ivec2(color.b + 512, 0), 1);
+    }
+}

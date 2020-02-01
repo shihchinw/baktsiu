@@ -144,6 +144,9 @@ private:
 
     void    updateImageSplitterPos(ImGuiIO&);
 
+    //! Dispatch compute kernels for image statistics.
+    void    computeImageStatistics(const RenderTexture&, float valueScale);
+
     //! Reset image transform to viewport center.
     void    resetImageTransform(const Vec2f& imgSize, bool fitWindow = false);
     
@@ -209,8 +212,12 @@ private:
     RenderTexture   mRenderTextures[2];   // The intermediate output for input image.
     int             mTopImageRenderTexIdx = 0;
 
-    Shader      mGradingShader;
-    Shader      mPresentShader;
+    Shader          mGradingShader;
+    Shader          mPresentShader;
+    Shader          mStatisticsShader;
+    GLuint          mTexHistogram;
+    
+    std::array<int, 768> mHistogram;
 
     CompositeFlags      mCompositeFlags = CompositeFlags::Top;
     PixelMarkerFlags    mPixelMarkerFlags = PixelMarkerFlags::Default;

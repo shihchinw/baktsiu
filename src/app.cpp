@@ -42,6 +42,46 @@ shader.initFromFiles(name, "shaders/"##STRING(vtxName)##".vert", "shaders/"##STR
 namespace
 {
 
+void APIENTRY glDebugOutput(GLenum source, GLenum type, GLuint id, GLenum severity,
+    GLsizei length, const GLchar *message, void *userParam)
+{
+    // Ignore non-significant error/warning codes
+    if (id == 131169 || id == 131185 || id == 131218 || id == 131204) return;
+
+    std::cout << "[" << id << "] ";
+
+    switch (source) {
+    case GL_DEBUG_SOURCE_API:             std::cout << "API"; break;
+    case GL_DEBUG_SOURCE_WINDOW_SYSTEM:   std::cout << "Window System"; break;
+    case GL_DEBUG_SOURCE_SHADER_COMPILER: std::cout << "Shader Compiler"; break;
+    case GL_DEBUG_SOURCE_THIRD_PARTY:     std::cout << "Third Party"; break;
+    case GL_DEBUG_SOURCE_APPLICATION:     std::cout << "Application"; break;
+    case GL_DEBUG_SOURCE_OTHER:           std::cout << "Other"; break;
+    }
+
+    switch (type) {
+    case GL_DEBUG_TYPE_ERROR:               std::cout << ", Error"; break;
+    case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: std::cout << ", Deprecated Behaviour"; break;
+    case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:  std::cout << ", Undefined Behaviour"; break;
+    case GL_DEBUG_TYPE_PORTABILITY:         std::cout << ", Portability"; break;
+    case GL_DEBUG_TYPE_PERFORMANCE:         std::cout << ", Performance"; break;
+    case GL_DEBUG_TYPE_MARKER:              std::cout << ", Marker"; break;
+    case GL_DEBUG_TYPE_PUSH_GROUP:          std::cout << ", Push Group"; break;
+    case GL_DEBUG_TYPE_POP_GROUP:           std::cout << ", Pop Group"; break;
+    case GL_DEBUG_TYPE_OTHER:               std::cout << ", Other"; break;
+    }
+
+    switch (severity) {
+    case GL_DEBUG_SEVERITY_HIGH:         std::cout << ", Severity high ]"; break;
+    case GL_DEBUG_SEVERITY_MEDIUM:       std::cout << ", Severity medium ]"; break;
+    case GL_DEBUG_SEVERITY_LOW:          std::cout << ", Severity low ]"; break;
+    case GL_DEBUG_SEVERITY_NOTIFICATION: std::cout << ", Severity notification ]"; break;
+    }
+
+    std::cout << "\n\n" << message;
+    std::cout << "\n---------------\n\n";
+}
+
 // See more implementations about toggle button https://github.com/ocornut/imgui/issues/1537
 bool ToggleButton(const char* label, bool* value, const ImVec2 &size = ImVec2(0, 0), bool enable = true)
 {
@@ -90,6 +130,115 @@ bool Splitter(bool split_vertically, float thickness, float* size1, float* size2
 }
 
 }  // namespace anonymous
+
+namespace ImGui 
+{
+
+static ImU32 InvertColorU32(ImU32 in)
+{
+    ImVec4 in4 = ColorConvertU32ToFloat4(in);
+    in4.x = 1.f - in4.x;
+    in4.y = 1.f - in4.y;
+    in4.z = 1.f - in4.z;
+    return GetColorU32(in4);
+}
+
+// Draw advanced histogram https://github.com/ocornut/imgui/issues/632
+void PlotMultiHistograms(
+    const char* label,
+    int num_hists,
+    const char** names,
+    const ImColor* colors,
+    int pixel_counts[],
+    int norm_pixel_count,
+    int values_count,
+    float scale_min,
+    float scale_max,
+    ImVec2 graph_size)
+{
+    const int values_offset = 0;
+
+    ImGuiWindow* window = GetCurrentWindow();
+    if (window->SkipItems)
+        return;
+
+    ImGuiContext& g = *GImGui;
+    const ImGuiStyle& style = g.Style;
+    const ImGuiID id = window->GetID(label);
+
+    const ImVec2 label_size = ImGui::CalcTextSize(label, NULL, true);
+    if (graph_size.x == 0.0f)
+        graph_size.x = CalcItemWidth();
+    if (graph_size.y == 0.0f)
+        graph_size.y = label_size.y + (style.FramePadding.y * 2);
+
+    const ImRect frame_bb(window->DC.CursorPos, window->DC.CursorPos + ImVec2(graph_size.x, graph_size.y));
+    const ImRect inner_bb(frame_bb.Min + style.FramePadding, frame_bb.Max - style.FramePadding);
+    const ImRect total_bb(frame_bb.Min, frame_bb.Max + ImVec2(label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f, 0));
+    ItemSize(total_bb, style.FramePadding.y);
+    if (!ItemAdd(total_bb, NULL))
+        return;
+
+    RenderFrame(inner_bb.Min, inner_bb.Max, GetColorU32(ImGuiCol_FrameBg), true, 1.0f);
+
+    int res_w = ImMin((int)graph_size.x, values_count);
+    int item_count = values_count;
+
+    // Tooltip on hover
+    int v_hovered = -1;
+    if (ItemHoverable(inner_bb, id)) {
+        const float t = ImClamp((g.IO.MousePos.x - inner_bb.Min.x) / (inner_bb.Max.x - inner_bb.Min.x), 0.0f, 1.0f);
+        const int v_idx = std::min((int)(t * item_count), item_count - 1);
+        IM_ASSERT(v_idx >= 0 && v_idx < values_count);
+
+        // std::string toolTip;
+        ImGui::BeginTooltip();
+        const int idx0 = (v_idx + values_offset) % values_count;
+        TextColored(ImColor(255, 255, 255, 255), "Level: %d", v_idx);
+
+        for (int dataIdx = 0; dataIdx < num_hists; ++dataIdx) {
+            const int v0 = pixel_counts[dataIdx * values_count + idx0];
+            TextColored(ImColor(255, 255, 255, 255), "%s: %d", names[dataIdx], v0);
+        }
+        
+        ImGui::EndTooltip();
+        v_hovered = v_idx;
+    }
+
+    for (int data_idx = 0; data_idx < num_hists; ++data_idx) {
+        const float t_step = 1.0f / (float)res_w;
+
+        float v0 = pixel_counts[data_idx * values_count] / static_cast<float>(norm_pixel_count);
+        float t0 = 0.0f;
+        ImVec2 tp0 = ImVec2(t0, 1.0f - ImSaturate((v0 - scale_min) / (scale_max - scale_min)));    // Point in the normalized space of our target rectangle
+
+        const ImU32 col_base = colors[data_idx];
+        const ImU32 col_hovered = InvertColorU32(colors[data_idx]);
+
+        for (int n = 0; n < res_w; n++) {
+            const float t1 = t0 + t_step;
+            const int v1_idx = (int)(t0 * item_count + 0.5f);
+            IM_ASSERT(v1_idx >= 0 && v1_idx < values_count);
+            const float v1 = pixel_counts[data_idx * values_count + v1_idx] / static_cast<float>(norm_pixel_count);
+            const ImVec2 tp1 = ImVec2(t1, 1.0f - ImSaturate((v1 - scale_min) / (scale_max - scale_min)));
+
+            // NB: Draw calls are merged together by the DrawList system. Still, we should render our batch are lower level to save a bit of CPU.
+            ImVec2 pos0 = ImLerp(inner_bb.Min, inner_bb.Max, tp0);
+            ImVec2 pos1 = ImLerp(inner_bb.Min, inner_bb.Max, ImVec2(tp1.x, 1.0f));
+            if (pos1.x >= pos0.x + 2.0f) {
+                pos1.x -= 1.0f;
+            }
+            window->DrawList->AddRectFilled(pos0, pos1, v_hovered == v1_idx ? col_hovered : col_base);
+
+            t0 = t1;
+            tp0 = tp1;
+        }
+    }
+
+    //RenderText(ImVec2(frame_bb.Max.x + style.ItemInnerSpacing.x, inner_bb.Min.y), label);
+}
+
+} // namespace ImGui
 
 
 namespace baktsiu
@@ -181,6 +330,10 @@ bool App::initialize(const char* title, int width, int height)
     glfwWindowHint(GLFW_SRGB_CAPABLE, GL_FALSE);
 #endif
 
+#ifdef _DEBUG
+    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
+#endif
+
     // Create window with graphics context
     mWindow = glfwCreateWindow(width, height, title, nullptr, nullptr);
     if (mWindow == nullptr) {
@@ -211,6 +364,15 @@ bool App::initialize(const char* title, int width, int height)
     GLint encoding;
     glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_FRONT_LEFT, GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING, &encoding);
     assert(encoding == GL_LINEAR);
+
+    GLint flags;
+    glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
+    if (flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
+        glEnable(GL_DEBUG_OUTPUT);
+        glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+        glDebugMessageCallback(glDebugOutput, nullptr);
+        glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
+    }
 #endif
 
     ScopeMarker("Initialization");
@@ -267,6 +429,14 @@ bool App::initialize(const char* title, int width, int height)
 
     status = INIT_SHADER(mGradingShader, "color_grading", quad, color_grading);
     CHECK_AND_RETURN_IT(status, "Failed to initialize color grading shader");
+
+    glGenTextures(1, &mTexHistogram);
+    glBindTexture(GL_TEXTURE_2D, mTexHistogram);
+    // Setup filtering parameters for display
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32I, static_cast<GLint>(mHistogram.size()), 1);
+    status = mStatisticsShader.initCompute("statistics", statistics_comp);
 
     return status;
 }
@@ -458,6 +628,10 @@ void App::run(CompositeFlags initFlags)
 
         if (topImage) {
             gradingTexImage(*topImage, mTopImageRenderTexIdx);
+            if (mShowImagePropWindow) {
+                float valueScale = topImage->getColorEncodingType() == ColorEncodingType::Linear ? 1.0f : 255.0f;
+                computeImageStatistics(mRenderTextures[mTopImageRenderTexIdx], valueScale);
+            }
         }
 
         if (enableCompareView && mCmpImageIndex >= 0) {
@@ -561,6 +735,30 @@ void    App::gradingTexImage(Texture &texture, int renderTexIdx)
 
     mGradingShader.drawTriangle();
     mRenderTextures[renderTexIdx].unbind();
+}
+
+void    App::computeImageStatistics(const RenderTexture& texture, float valueScale)
+{
+    ScopeMarker("Compute Image Statistics");
+
+    // Calculate image statistics.
+    std::fill(mHistogram.begin(), mHistogram.end(), 0);
+    glBindTexture(GL_TEXTURE_2D, mTexHistogram);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, static_cast<GLint>(mHistogram.size()), 1, GL_RED_INTEGER, GL_INT, (void*)mHistogram.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    mStatisticsShader.bind();
+    glBindImageTexture(0, texture.id(), 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA16F);
+    glBindImageTexture(1, mTexHistogram, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32I);
+
+    Vec2i size = texture.size();
+    mStatisticsShader.setUniform("uImageSize", size);
+    mStatisticsShader.setUniform("uValueScale", valueScale);
+    mStatisticsShader.compute(size.x / 16, size.y / 16);
+
+    /*glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT);
+    glBindTexture(GL_TEXTURE_2D, mTexHistogram);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RED_INTEGER, GL_INT, (void*)mHistogram.data());*/
 }
 
 void    App::onKeyPressed(const ImGuiIO& io)
@@ -1059,19 +1257,34 @@ void App::initImagePropWindow()
     ImGui::BeginChild("ScrollingRegion1", ImVec2(propWindowWidth - g.Style.WindowPadding.x, size1));
 
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
-    // Draw advanced histogram https://github.com/ocornut/imgui/issues/632
-    //if (ImGui::CollapsingHeader("Histogram")) {
-    //    struct Funcs
-    //    {
-    //        static float Sin(void*, int i) { return sinf(i * 0.1f); }
-    //        static float Saw(void*, int i) { return (i & 1) ? 1.0f : -1.0f; }
-    //    };
-    //    static int func_type = 0, display_count = 256;
-    //    static float arr[] = { 0.6f, 0.1f, 1.0f, 0.5f, 0.92f, 0.1f, 0.2f };
-    //    float(*func)(void*, int) = (func_type == 0) ? Funcs::Sin : Funcs::Saw;
-    //    //ImGui::PlotHistogram("##histogram", func, NULL, display_count, 0, NULL, -1.0f, 1.0f, ImVec2(0, 120));
-    //    ImGui::PlotHistogram("##histogram", arr, IM_ARRAYSIZE(arr), 0, NULL, 0.0f, 1.0f, ImVec2(0, 80));
-    //}
+    
+    auto* topImage = getTopImage();
+    if (ImGui::CollapsingHeader("Histogram") && topImage) {
+        ScopeMarker("Draw Histogram");
+        glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT);
+        glBindTexture(GL_TEXTURE_2D, mTexHistogram);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RED_INTEGER, GL_INT, (void*)mHistogram.data());
+
+        ImGui::SetNextItemWidth(propWindowWidth - ImGui::GetStyle().ItemSpacing.x);
+        const char* names[3] = {"R", "G", "B"};
+        static ImColor colors[3] = { ImColor(255, 0, 0, 150), ImColor(0, 255, 0, 150), ImColor(0, 0, 255, 150) };
+        const int binSize = 256;
+        static float arr[binSize * 3];
+
+        // Get the first 25-th largest bin counts and use it as the normalize factor.
+        std::vector<int> temp;
+        temp.assign(mHistogram.begin(), mHistogram.end());
+        std::nth_element(temp.begin(), temp.end() - 25, temp.end());
+        int normPixelCount =*(temp.end() - 25);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, Vec2f(3.0f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(69, 69, 69, 255));
+        ImGui::PushFont(mSmallFont);
+        ImGui::PlotMultiHistograms("##histogram", 3, names, colors, mHistogram.data(), normPixelCount, binSize, 0.0f, 1.0f, ImVec2(0, 100));
+        ImGui::PopFont();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(1);
+    }
 
     //if (ImGui::CollapsingHeader("Scope")) {
     //}

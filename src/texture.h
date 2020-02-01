@@ -107,6 +107,8 @@ public:
     //! Return id of output texture.
     GLuint  id() const { return mTexId; }
 
+    Vec2i   size() const { return mSize; }
+
     void    bind();
 
     void    unbind();
