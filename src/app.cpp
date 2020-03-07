@@ -366,6 +366,8 @@ bool App::initialize(const char* title, int width, int height)
         return false;
     }
 
+    mSupportComputeShader = glfwExtensionSupported("GL_ARB_compute_shader");
+
 #ifdef _DEBUG
     // Check output frame buffer has no gamma color encoding, since we done it in our shader of image presentation.
     GLint encoding;
@@ -437,13 +439,15 @@ bool App::initialize(const char* title, int width, int height)
     status = INIT_SHADER(mGradingShader, "color_grading", quad, color_grading);
     CHECK_AND_RETURN_IT(status, "Failed to initialize color grading shader");
 
-    glGenTextures(1, &mTexHistogram);
-    glBindTexture(GL_TEXTURE_2D, mTexHistogram);
-    // Setup filtering parameters for display
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32I, static_cast<GLint>(mHistogram.size()), 1);
-    status = mStatisticsShader.initCompute("statistics", statistics_comp);
+    if (mSupportComputeShader) {
+        glGenTextures(1, &mTexHistogram);
+        glBindTexture(GL_TEXTURE_2D, mTexHistogram);
+        // Setup filtering parameters for display
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32I, static_cast<GLint>(mHistogram.size()), 1);
+        status = mStatisticsShader.initCompute("statistics", statistics_comp);
+    }
 
     return status;
 }
@@ -635,7 +639,7 @@ void App::run(CompositeFlags initFlags)
 
         if (topImage) {
             gradingTexImage(*topImage, mTopImageRenderTexIdx);
-            if (mShowImagePropWindow) {
+            if (mShowImagePropWindow && mSupportComputeShader) {
                 float valueScale = topImage->getColorEncodingType() == ColorEncodingType::Linear ? 1.0f : 255.0f;
                 computeImageStatistics(mRenderTextures[mTopImageRenderTexIdx], valueScale);
             }
@@ -957,23 +961,6 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
     }
 }
 
-
-//// Restrict transformation to avoid image moving out of viewport.
-//void    App::applyImageTransformConstraint(const Vec2f& viewportSize, const Vec2f& imageSize, const Vec2f& imageOffset)
-//{
-//   /* const auto safePadding = Vec2f(100.0f);
-//
-//    Vec2f minOffset = safePadding - imageSize;
-//    Vec2f maxOffset = viewportSize - safePadding;
-//    Vec2f coffset(0.0f);
-//
-//    coffset = glm::mix(coffset, minOffset - imageOffset, glm::lessThan(imageOffset, minOffset));
-//    coffset = glm::mix(coffset, maxOffset - imageOffset, glm::greaterThan(imageOffset, maxOffset));
-//
-//    mImageTransform[2][0] += coffset.x;
-//    mImageTransform[2][1] += coffset.y;*/
-//}
-
 void App::updateImagePairFromPressedKeys()
 {
     const int imageNum = static_cast<int>(mImageList.size());
@@ -1271,7 +1258,7 @@ void App::initImagePropWindow()
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
     
     auto* topImage = getTopImage();
-    if (ImGui::CollapsingHeader("Histogram") && topImage) {
+    if (ImGui::CollapsingHeader("Histogram") && topImage && mSupportComputeShader) {
         ScopeMarker("Draw Histogram");
         glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT);
         glBindTexture(GL_TEXTURE_2D, mTexHistogram);

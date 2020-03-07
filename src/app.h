@@ -264,6 +264,7 @@ private:
     bool        mUseLinearFilter = true;
     bool        mShowImageNameOverlay = true;
     bool        mShowPixelMarker = false;
+    bool        mSupportComputeShader = false;
 };
 
 }  // namespace baktsiu

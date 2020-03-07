@@ -28,13 +28,15 @@ GLuint createShader(GLint type, const std::string& name, const std::string& cont
             shaderType = "fragment";
         } else if (type == GL_GEOMETRY_SHADER) {
             shaderType = "geometry";
+        } else if (type == GL_COMPUTE_SHADER) {
+            shaderType = "compute";
         }
 
         char buffer[512];
         glGetShaderInfoLog(id, 512, nullptr, buffer);
         std::string msg = fmt::format("Error while compiling {} shader \"{}\":\n{}", shaderType, name, buffer);
         baktsiu::promptError(msg);
-        throw std::runtime_error("Shader compilation failed!");
+        throw std::runtime_error(msg);
     }
 
     return id;
