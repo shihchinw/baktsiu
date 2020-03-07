@@ -15,7 +15,9 @@
 
 #include <fstream>
 #include <memory>
+#include <sstream>
 
+#include <fx/gltf.h>
 #include <stb_image.h>
 
 #define STB_TRUETYPE_IMPLEMENTATION
@@ -41,6 +43,11 @@ shader.initFromFiles(name, "shaders/"##STRING(vtxName)##".vert", "shaders/"##STR
 
 namespace
 {
+
+bool endsWith(const std::string& str, const std::string& token)
+{
+    return str.rfind(token, str.size() - token.size()) != std::string::npos;
+}
 
 void APIENTRY glDebugOutput(GLenum source, GLenum type, GLuint id, GLenum severity,
     GLsizei length, const GLchar *message, void *userParam)
@@ -771,6 +778,8 @@ void    App::onKeyPressed(const ImGuiIO& io)
         undoAction();
     } else if (io.KeyCtrl && ImGui::IsKeyPressed(0x4F)) { // Ctrl+o
         showImportImageDlg();
+    } else if (io.KeyCtrl && ImGui::IsKeyPressed(0x45)) { // Ctrl+e
+        showExportSessionDlg();
     } else if (ImGui::IsKeyPressed(0x53)) { // s
         toggleSplitView();
     } else if (ImGui::IsKeyPressed(0x43)) { // c
@@ -1042,8 +1051,11 @@ void    App::initToolbar()
     }
     if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Import Images"); }
 
-    //ImGui::SameLine();
-    //ImGui::Button(ICON_FA_SAVE, buttonSize);
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_FILE_EXPORT, buttonSize)) {
+        showExportSessionDlg();
+    }
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Export Session"); }
 
     const float comboMenuWidth = 100.0f;
     static float centeredToolItemWidth = 506.0f;
@@ -1551,12 +1563,14 @@ void    App::initHomeWindow(const char* name)
                 ImGui::Separator();
 
                 ImGui::Text("Import Images");
+                ImGui::Text("Export Session");
                 ImGui::Text("Reload Selected Image");
                 ImGui::Text("Close Selected Image");
                 ImGui::Text("Close All Images");
                 ImGui::NextColumn();
 
                 ImGui::Text("Ctrl+O");
+                ImGui::Text("Ctrl+E");
                 ImGui::Text("F5");
                 ImGui::Text("Backspace/Del");
                 ImGui::Text("Ctrl+Shift+W");
@@ -1787,22 +1801,53 @@ void App::undoAction()
 void    App::showImportImageDlg()
 {
     static std::vector<std::string> filters = {
-        "Supported Image Files", "*.bmp; *.jpg; *.png",
+        "Supported Image Files", "*.bmp; *.exr; *.gif; *.jpg; *.hdr; *.png; *.bts" ,
         "BMP (*.BMP)", "*.bmp",
         "OpenEXR (*.EXR)", "*.exr",
         "GIF (*.GIF)", "*.gif",
         "JPEG (*.JPG, *.JPEG)", "*.jpg; *.jpeg",
         "HDR (*.HDR)", "*.hdr",
-        "PNG (*.PNG)", "*.png"
+        "PNG (*.PNG)", "*.png",
+        "Bak-Tsiu Session (*.BTS)", "*.bts",
     };
 
     std::vector<std::string> selection = pfd::open_file("Select image file(s)", "", filters, true).result();
-    importImageFiles(selection, true);
+    auto iter = selection.begin();
+    while (iter != selection.end()) {
+        if (endsWith(*iter, ".bts")) {
+            openSession(*iter);
+            iter = selection.erase(iter);
+        } else {
+            ++iter;
+        }
+    }
+
+    if (!selection.empty()) {
+        importImageFiles(selection, true);
+    }
+}
+
+void    App::showExportSessionDlg()
+{
+    static std::vector<std::string> filters = {
+        "Bak-Tsiu Session (*.BTS)", "*.bts",
+    };
+
+    std::string filepath = pfd::save_file("Export compare session", "", filters, true).result();
+
+    if (!filepath.empty()) {
+        if (!endsWith(filepath, ".bts")) {
+            filepath += ".bts";
+        }
+
+        saveSession(filepath);
+    }
 }
 
 void    App::importImageFiles(const std::vector<std::string>& filepathArray, bool recordAction, std::vector<int>* imageIdxArray)
 {
     const size_t count = filepathArray.size();
+
     Action action(Action::Type::Add, mTopImageIndex, mCmpImageIndex);
 
     {
@@ -2024,13 +2069,52 @@ void    App::onFileDrop(int count, const char* filepaths[])
 {
     std::vector<std::string> filepathArray;
     filepathArray.reserve(count);
+
     for (int i = 0; i < count; ++i) {
-        std::string normpath = filepaths[i];
-        std::replace(normpath.begin(), normpath.end(), '\\', '/');
-        filepathArray.push_back(normpath);
+        const std::string &filepath = filepaths[i];
+
+        if (endsWith(filepath, ".bts")) {
+            openSession(filepath);
+        } else {
+            filepathArray.push_back(filepath);
+        }
+    }
+
+    if (!filepathArray.empty()) {
+        importImageFiles(filepathArray, true);
+    }
+}
+
+void    App::openSession(const std::string& filepath)
+{
+    fx::gltf::Document sessionFile = fx::gltf::LoadFromText(filepath);
+    if ("baktsiu" != sessionFile.asset.generator) {
+        promptError("Input is not a valid Bak-Tsiu session file");
+        return;
+    }
+
+    std::vector<std::string> filepathArray;
+    filepathArray.reserve(sessionFile.images.size());
+    
+    for (auto &imageProp : sessionFile.images) {
+        filepathArray.push_back(imageProp.uri);
     }
 
     importImageFiles(filepathArray, true);
+}
+
+void    App::saveSession(const std::string& filepath)
+{
+    fx::gltf::Document sessionFile;
+    sessionFile.asset.generator = "baktsiu";
+
+    for (auto &image : mImageList) {
+        fx::gltf::Image imageProp;
+        imageProp.uri = image->filepath();
+        sessionFile.images.push_back(imageProp);
+    }
+
+    fx::gltf::Save(sessionFile, filepath, false);
 }
 
 }  // namespace baktsiu

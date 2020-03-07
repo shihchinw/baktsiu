@@ -133,6 +133,8 @@ private:
 
     void    showImportImageDlg();
 
+    void    showExportSessionDlg();
+
     //! Handle key pressed cases.
     //! @note Few key pressed events related to image transformation are handled in updateImageTransform.
     void    onKeyPressed(const ImGuiIO&);
@@ -168,6 +170,12 @@ private:
     void    processTextureUploadTasks();
 
     void    onFileDrop(int count, const char* filepaths[]);
+
+    //! Open compare session.
+    void    openSession(const std::string& filepath);
+
+    //! Save compare session with file extension .bts
+    void    saveSession(const std::string& filepath);
 
     void    gradingTexImage(Texture &, int renderTexIdx);
 
