@@ -5,7 +5,6 @@ namespace baktsiu
 
 Vec2f   View::getViewportCoords(const Vec2f& imgCoords) const
 {
-    Vec2f visibleSize = getVisibleSize();
     Vec2f imageOffset = getImageOffset();
     return glm::clamp(imgCoords * mImageScale + imageOffset, Vec2f(0.0f), mViewSize);
 }
@@ -23,9 +22,19 @@ Vec2f   View::getImageCoords(const Vec2f& viewCoords, bool* isClamped) const
     return glm::clamp(coords, Vec2f(0.0f), mImageSize);
 }
 
+Vec2f   View::getLocalOffset() const
+{
+    return mLocalOffset;
+}
+
 void    View::setImageSize(const Vec2f& size)
 {
     mImageSize = size;
+}
+
+void    View::setLocalOffset(const Vec2f& offset)
+{
+    mLocalOffset = offset;
 }
 
 void View::setViewportPadding(const Vec4f& padding)
@@ -37,7 +46,7 @@ Vec2f   View::getImageOffset() const
 {
     // Offset is relative to the origin at bottom left.
     Vec2f visibleSize = getVisibleSize();
-    Vec3f offset((visibleSize - mImageSize) * 0.5f, 1.0);
+    Vec3f offset((visibleSize - mImageSize) * 0.5f + mLocalOffset, 1.0);
     offset.x += mViewPadding.w;
     offset.y += mViewPadding.z;
 
@@ -77,10 +86,14 @@ void    View::scale(float value, const Vec2f* pivot)
     mImageScale *= value;
 }
 
-void    View::translate(const Vec2f& value)
+void    View::translate(const Vec2f& value, bool localSpace)
 {
-    mTransform[2][0] += value.x;
-    mTransform[2][1] += value.y;
+    if (!localSpace) {
+        mTransform[2][0] += value.x;
+        mTransform[2][1] += value.y;
+    } else {
+        mLocalOffset += value;
+    }
     
     restrictTranslation();
 }
@@ -154,8 +167,9 @@ Vec2f   View::getVisibleSize() const
 
 void    View::reset(bool fitViewport)
 {
-    mTransform = Mat3f(1.0);
+    mTransform = Mat3f(1.0f);
     mImageScale = 1.0f;
+    mLocalOffset = Vec2f(0.0f);
     
     Vec2f visibleSize = getVisibleSize();
     mImageScalePivot = visibleSize * 0.5f;

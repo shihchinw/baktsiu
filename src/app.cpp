@@ -700,6 +700,7 @@ void App::run(CompositeFlags initFlags)
             mRenderTextures[mTopImageRenderTexIdx ^ 1].setFilter(mUseLinearFilter && !forceNearestFilter);
             mPresentShader.setUniform("uImage2", 1);
             mPresentShader.setUniform("uOffsetExtra", bottomView.getImageOffset());
+            mPresentShader.setUniform("uRelativeOffset", (bottomView.getLocalOffset() - topView.getLocalOffset()) * mImageScale);
         }
 
         glActiveTexture(GL_TEXTURE2);
@@ -784,6 +785,8 @@ void    App::onKeyPressed(const ImGuiIO& io)
         showImportImageDlg();
     } else if (io.KeyCtrl && ImGui::IsKeyPressed(0x45)) { // Ctrl+e
         showExportSessionDlg();
+    } else if (io.KeyAlt && ImGui::IsKeyPressed(0x43)) { // Alt+c
+        syncSideBySideView(io);
     } else if (ImGui::IsKeyPressed(0x53)) { // s
         toggleSplitView();
     } else if (ImGui::IsKeyPressed(0x43)) { // c
@@ -833,6 +836,12 @@ void    App::updateImageSplitterPos(ImGuiIO& io)
     }
 }
 
+void    App::syncSideBySideView(const ImGuiIO& io)
+{
+    int columnIdx = static_cast<int>(io.MousePos.x > io.DisplaySize.x * mViewSplitPos);
+    mColumnViews[columnIdx].setLocalOffset(mColumnViews[columnIdx ^ 1].getLocalOffset());
+}
+
 void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
 {
     Texture* topImage = getTopImage();
@@ -868,10 +877,19 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
 
             if (!useColumnView) {
                 mView.translate(translate);
+            } else if (io.KeyAlt) {
+                static Vec2f residualTranslate = Vec2f(0.0f);
+                translate += residualTranslate;
+                
+                Vec2f roundedTranslate = glm::round(translate / mImageScale);
+                int columnIdx = static_cast<int>(io.MousePos.x > io.DisplaySize.x * mViewSplitPos);
+                mColumnViews[columnIdx].translate(roundedTranslate, true);
+                residualTranslate = translate - roundedTranslate * mImageScale;
             } else {
                 mColumnViews[0].translate(translate);
                 mColumnViews[1].translate(translate);
             }
+
             return;
         }
     }
@@ -952,9 +970,9 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
         // Retrieve the scale pivot in the other column view, we first get the
         // pixel coordinates, then use it to get corresponding viewport coordinates.
         Vec2f pixelCoords = mColumnViews[focusColumnIdx].getImageCoords(scalePivot);
-        
         const int theOtherColumnIdx = focusColumnIdx ^ 1;
         Vec2f theOtherScalePivot = mColumnViews[theOtherColumnIdx].getViewportCoords(pixelCoords);
+
         // Align pivot height.
         theOtherScalePivot.y = scalePivot.y;
         mColumnViews[theOtherColumnIdx].scale(relativeScale, &theOtherScalePivot);
@@ -1565,18 +1583,22 @@ void    App::initHomeWindow(const char* name)
 
                 ImGui::Separator();
                 ImGui::Text("Pan");
+                ImGui::Text("Offset Column View");
                 ImGui::Text("Zoom In/Out\n ");
                 ImGui::Text("Zoom In/Out in Power-of-Two");
                 ImGui::Text("Zoom to Actual Size");
                 ImGui::Text("Fit to Viewport");
+                ImGui::Text("Sync Column View");
                 ImGui::Text("Pixel Sniper");
                 ImGui::NextColumn();
 
                 ImGui::Text("Drag Left Mouse Button");
+                ImGui::Text("Drag Left Mouse Button + Alt");
                 ImGui::Text("Mouse Scroll or\nDrag Left + Right Mouse Buttons Vertically");
                 ImGui::Text("+/-");
                 ImGui::Text("/ or F");
                 ImGui::Text("Shift+F");
+                ImGui::Text("Alt+C");
                 ImGui::Text("Holding Z");
                 ImGui::NextColumn();
 

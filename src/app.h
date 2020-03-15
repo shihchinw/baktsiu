@@ -151,6 +151,9 @@ private:
 
     //! Reset image transform to viewport center.
     void    resetImageTransform(const Vec2f& imgSize, bool fitWindow = false);
+
+    //! Synchronize local offset of column views.
+    void    syncSideBySideView(const ImGuiIO& io);
     
     //! Return pixel coordinates from mouse position.
     bool    getImageCoordinates(Vec2f viewportCoords, Vec2f& outImageCoords) const;

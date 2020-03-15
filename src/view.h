@@ -17,6 +17,9 @@ public:
     //! Return image coordinates from viewport coordinates.
     Vec2f   getImageCoords(const Vec2f& viewCoords, bool* isClamped = nullptr) const;
 
+    //! Return origin offset.
+    Vec2f   getLocalOffset() const;
+
     //! Get offset of scaled image (in pixels of viewport)
     Vec2f   getImageOffset() const;
 
@@ -24,6 +27,8 @@ public:
     float   getImageScale() const;
 
     Vec2f   getImageScalePivot() const;
+
+    void    setLocalOffset(const Vec2f& offset);
 
     //! Set original image size.
     void    setImageSize(const Vec2f& size);
@@ -36,7 +41,8 @@ public:
     void    scale(float value, const Vec2f* pivot = nullptr);
 
     //! Translate in viewport coordinates.
-    void    translate(const Vec2f& offset);
+    //! @param localSpace Offset is specified in local coordinates (before transformation).
+    void    translate(const Vec2f& offset, bool localSpace = false);
 
     //! Reset image to viewport center.
     void    reset(bool fitViewport);
@@ -55,6 +61,7 @@ private:
     void    restrictTranslation();
 
 private:
+    Vec2f   mLocalOffset = Vec2f(0.0f);
     Mat3f   mTransform = Mat3f(1.0f);   // 2D affine transformation for image.
     Vec4f   mViewPadding = Vec4f(0.0f); // (top, right, bottom, left)
     Vec2f   mViewSize = Vec2f(1.0f);
