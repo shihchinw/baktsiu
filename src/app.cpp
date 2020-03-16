@@ -1588,7 +1588,7 @@ void    App::initHomeWindow(const char* name)
                 ImGui::Text("Zoom In/Out in Power-of-Two");
                 ImGui::Text("Zoom to Actual Size");
                 ImGui::Text("Fit to Viewport");
-                ImGui::Text("Sync Column View");
+                ImGui::Text("Sync Column Views");
                 ImGui::Text("Pixel Sniper");
                 ImGui::NextColumn();
 

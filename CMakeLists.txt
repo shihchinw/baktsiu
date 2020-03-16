@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.1)
 project(baktsiu)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
-set(VERSION "0.1.0" CACHE STRING " " FORCE)
+set(VERSION "0.2.0" CACHE STRING " " FORCE)
 
 option(USE_NVTX "Use NVidia Tool Extensions" OFF)
 option(USE_OPENEXR "Use OpenEXR" OFF)

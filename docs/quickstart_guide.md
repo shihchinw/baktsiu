@@ -35,6 +35,8 @@ Press <kbd>C</kbd> or <i class="fas fa-columns"></i> button to toggle side-by-si
 
 The corresponding pixels would be highlighted in green border in close-up view. If there is no highlighted border shown in another view, please move the splitter to make more space and pan the view to the region of interests.
 
+To apply local translation to current column view, just press <kbd>Alt</kbd> and drag left mouse button. If you want to synchronize local translation of both views, press <kbd>Alt+C</kbd>.
+
 ## Image Layers <i class="fas fa-layer-group"></i>
 
 Press <kbd>Tab</kbd> key or click <i class="fas fa-chart-bar"></i> button to toggle property window. Click left mouse button on the image item to display it on the left; click right mouse button for the displayed image on the right.
@@ -75,6 +77,12 @@ Range clipping detection (not shown in heatmap mode):
 * Shadow clipping (blue mark): if all RGB values < 0.00001
 * Highlight clipping (red mark): if all RGB values > 1.0
 
+## Tone Mapping <i class="fas fa-film"></i>
+
+Numerical [approximation](https://github.com/shihchinw/numex/blob/master/notebooks/aces_color_transform.ipynb) of ACES tone mapping.
+
+![](images/tone_mapping.jpg)
+
 ## Controls
 
 |To do this|Press|
@@ -87,15 +95,18 @@ Range clipping detection (not shown in heatmap mode):
 | Toggle Linear Image Filter | <kbd>Q</kbd> |
 | **Files** |
 | Import Images | <kbd>Ctrl+O</kbd> |
+| Export Session | <kbd>Ctrl+E</kbd> |
 | Reload Selected Image | <kbd>F5</kbd> |
 | Close Selected Image | <kbd>Backspace</kbd> or <kbd>Del</kbd> |
 | Close All Images | <kbd>Ctrl+Shift+W</kbd> |
 | **Pixel Navigation** |
 | Pan View | Drag Left Mouse Button |
+| Offset Column View | Drag Left Mouse Button + <kbd>Alt</kbd> |
 | Zoom In/Out | Scroll Mouse or<br>Drag Left + Right Mouse Buttons Vertically |
 | Zoom In/Out in Power-of-Two | <kbd>+</kbd> / <kbd>-</kbd> |
 | Zoom to Actual Size | <kbd>/</kbd> or <kbd>F</kbd> |
 | Fit to Viewport | <kbd>Shift+F</kbd> |
+| Sync Column Views | <kbd>Alt+C</kbd> |
 | Pixel Sniper | Holding <kbd>Z</kbd> |
 | **Image Selection** |
 | Next Compared Image | <kbd>D</kbd> or <kbd>&rarr;</kbd> |
