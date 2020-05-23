@@ -1346,12 +1346,15 @@ void App::initImagePropWindow()
             snprintf(buf, bufSize, "           %s%s", filename.c_str(), tag);
         }
 
+        ImGui::PushID(i);
         if (ImGui::Selectable(buf, mTopImageIndex == i, 0, Vec2f(propWindowWidth, 24.0f))) {
             mTopImageIndex = i;
             if (mCmpImageIndex == i) {
                 mCmpImageIndex = (mCmpImageIndex + 1) % imageNum;
             }
         }
+        ImGui::PopID();
+
         // Right click mouse to set compared imaeg directly.
         if (ImGui::IsItemClicked(1) && mTopImageIndex != i) {
             mCmpImageIndex = i;
