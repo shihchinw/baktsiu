@@ -629,7 +629,7 @@ void App::run(CompositeFlags initFlags)
             showHeatRangeOverlay(heatbarPos, 150.0f);
         }
         
-        // Since GLFW doesn't support crsor of resize all, thus we use imgui to draw that cursor.
+        // Since GLFW doesn't support cursor of resize all, thus we use imgui to draw that cursor.
         // Caution: the cursor is hidden when using imgui's drawn cursor, when the root window is unfocused.
         io.MouseDrawCursor = (ImGui::GetMouseCursor() == ImGuiMouseCursor_ResizeAll);
 
@@ -1332,39 +1332,80 @@ void App::initImagePropWindow()
     const int imageNum = static_cast<int>(mImageList.size());
     const bool enableCompareView = inCompareMode();
 
-    Vec4f activeBorderColor(1.0f, 1.0f, 1.0f, 1.0f);
-    Vec4f borderColor(1.0f, 1.0f, 1.0f, 0.5f);
+    static const Vec4f activeBorderColor(1.0f, 1.0f, 1.0f, 1.0f);
+    static const Vec4f borderColor(1.0f, 1.0f, 1.0f, 0.5f);
+    static bool isDraggingImageItem = false;
 
     for (int i = 0; i < imageNum; i++) {
         std::string filename = mImageList[i]->filename();
+        const GLuint texId = mImageList[i]->id();
         const auto filenameLength = filename.size();
-        const char* tag = ((i == mCmpImageIndex || i == mTopImageIndex) && enableCompareView) ? "  " ICON_FA_MAP_PIN : "";
         if (filenameLength > maxFilenameLength) {
             filename = filename.substr(filenameLength - maxFilenameLength);
-            snprintf(buf, bufSize, "        ...%s%s", filename.c_str(), tag);
+            snprintf(buf, bufSize, "        ...%s##%d", filename.c_str(), texId);
         } else {
-            snprintf(buf, bufSize, "           %s%s", filename.c_str(), tag);
+            snprintf(buf, bufSize, "           %s##%d", filename.c_str(), texId);
         }
 
-        ImGui::PushID(i);
-        if (ImGui::Selectable(buf, mTopImageIndex == i, 0, Vec2f(propWindowWidth, 24.0f))) {
-            mTopImageIndex = i;
-            if (mCmpImageIndex == i) {
-                mCmpImageIndex = (mCmpImageIndex + 1) % imageNum;
+        if (ImGui::Selectable(buf, mTopImageIndex == i && !isDraggingImageItem, 0, Vec2f(propWindowWidth, 24.0f))) {
+            if (isDraggingImageItem) {
+                isDraggingImageItem = false;
+            } else {
+                mTopImageIndex = i;
+                if (mCmpImageIndex == i) {
+                    mCmpImageIndex = (mCmpImageIndex + 1) % imageNum;
+                }
             }
         }
-        ImGui::PopID();
 
         // Right click mouse to set compared imaeg directly.
         if (ImGui::IsItemClicked(1) && mTopImageIndex != i) {
             mCmpImageIndex = i;
         }
 
-        ImGui::SameLine(g.Style.ItemSpacing.x);
-        ImGui::Image((void*)(intptr_t)mImageList[i]->id(), Vec2f(28.0f, 21.0f), Vec2f(0.0f, 0.0f), Vec2f(1.0f, 1.0f),
-            Vec4f(1.0f), mTopImageIndex == i ? activeBorderColor : borderColor);
-    }
+        if (!isDraggingImageItem && ImGui::IsItemHovered()) {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        } else if (isDraggingImageItem) {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+        }
 
+        if (ImGui::IsItemActive() && !ImGui::IsItemHovered()) {
+            isDraggingImageItem = true;
+            const int nextItemIdx = i + (ImGui::GetMouseDragDelta(0).y < 0.0f ? -1 : 1);
+            if (nextItemIdx >= 0 && nextItemIdx < imageNum) {
+                std::swap(mImageList[i], mImageList[nextItemIdx]);
+                ImGui::ResetMouseDragDelta();
+
+                if (nextItemIdx == mTopImageIndex) {
+                    mTopImageIndex = i;
+                    if (mCmpImageIndex == i) {
+                        mCmpImageIndex = nextItemIdx;
+                    }
+                } else if (nextItemIdx == mCmpImageIndex) {
+                    mCmpImageIndex = i;
+                    if (mTopImageIndex == i) {
+                        mTopImageIndex = nextItemIdx;
+                    }
+                } else {
+                    if (mTopImageIndex == i) {
+                        mTopImageIndex = nextItemIdx;
+                    } else if (mCmpImageIndex == i) {
+                        mCmpImageIndex = nextItemIdx;
+                    }
+                }
+            }
+        }
+
+        ImGui::SameLine(g.Style.ItemSpacing.x);
+        ImGui::Image((void*)(intptr_t)texId, Vec2f(28.0f, 22.0f), Vec2f(0.0f, 0.0f), Vec2f(1.0f, 1.0f),
+            Vec4f(1.0f), mTopImageIndex == i ? activeBorderColor : borderColor);
+
+        if ((i == mCmpImageIndex || i == mTopImageIndex) && enableCompareView) {
+            ImGui::SameLine(propWindowWidth - g.FontSize - g.Style.ItemSpacing.x * 2.0f);
+            ImGui::AlignTextToFramePadding();
+            ImGui::Text(i == mCmpImageIndex ? ICON_FA_ANGLE_RIGHT : ICON_FA_ANGLE_LEFT);
+        }
+    }
     ImGui::PopStyleVar(1);
     ImGui::EndChild();
 
@@ -1860,6 +1901,10 @@ void    App::importImageFiles(const std::vector<std::string>& filepathArray, boo
 {
     const size_t count = filepathArray.size();
 
+    if (count == 0) {
+        return;
+    }
+
     Action action(Action::Type::Add, mTopImageIndex, mCmpImageIndex);
 
     {
@@ -2092,9 +2137,7 @@ void    App::onFileDrop(int count, const char* filepaths[])
         }
     }
 
-    if (!filepathArray.empty()) {
-        importImageFiles(filepathArray, true);
-    }
+    importImageFiles(filepathArray, true);
 }
 
 void    App::openSession(const std::string& filepath)
