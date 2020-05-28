@@ -856,9 +856,12 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
     bool onFocus = !ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow);
     float oldImageScale = mImageScale;
     
-    if (ImGui::IsKeyReleased(0x5A)) {
+    static bool isInSniperMode = false;
+
+    if (isInSniperMode && ImGui::IsKeyReleased(0x5A)) {
         mImageScale = mPrevImageScale;
         mPrevImageScale = -1.0f;
+        isInSniperMode = false;
     }
 
     if (onFocus) {
@@ -936,9 +939,9 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
     } else if (ImGui::IsKeyPressed(0x14E) || ImGui::IsKeyPressed(0x3D)) {
         mImageScale *= 2.0f;
     } 
-    else if (ImGui::IsKeyPressed(0x5A) && mPrevImageScale < 0.0f) {
+    else if (!io.KeyCtrl && ImGui::IsKeyPressed(0x5A) && mPrevImageScale < 0.0f) {
+        isInSniperMode = true;
         scalePivot = fetchScalePivot(io, useColumnView, mViewSplitPos, mouseAtRightColumn);
-
         mPrevImageScale = mImageScale;
         mImageScale = 72.0f;
     }
