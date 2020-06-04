@@ -1,7 +1,9 @@
 #ifndef BAKTSIU_TEXTURE_H_
 #define BAKTSIU_TEXTURE_H_
 
+#include <memory>
 #include <string>
+#include <vector>
 
 #include <GL/gl3w.h>
 
@@ -24,6 +26,7 @@ enum class ImageType : char
     DNG
 };
 
+// Internal texture object.
 class Texture
 {
 public:
@@ -53,9 +56,6 @@ public:
     // Return GL texture id.
     GLuint  id() const { return mTexId; }
 
-    // Return unique index during image import.
-    int&    index() { return mIndex; }
-
     Vec2f   size() const { return Vec2f(mWidth, mHeight); }
 
     void    setFilter(bool value);
@@ -76,8 +76,8 @@ public:
 private:
     std::string     mFilePath;
     std::string     mFileName;
+
     uint8_t*        mBuffer = nullptr;
-    int             mIndex = -1;    // The display index in image property window.
     
     ImageType           mImageType = ImageType::Unknown;
     ColorPrimaryType    mColorPrimaryType = ColorPrimaryType::sRGB;
@@ -94,7 +94,11 @@ private:
 };
 
 
-//! The object for 
+using TextureSPtr = std::shared_ptr<Texture>;
+using TextureList = std::vector<TextureSPtr>;
+
+
+// Texture object as render target.
 class RenderTexture
 {
 public:
@@ -104,7 +108,7 @@ public:
 
     void    setFilter(bool useLinearFilter);
 
-    //! Return id of output texture.
+    // Return id of output texture.
     GLuint  id() const { return mTexId; }
 
     Vec2i   size() const { return mSize; }

@@ -505,60 +505,34 @@ void App::release()
     glfwTerminate();
 }
 
-// This is executed in GL thread.
+// This is executed in main thread (which has GL context).
 void App::processTextureUploadTasks()
 {
-    std::vector<TextureUPtr> newTextureList;
-    {
-        std::unique_lock<std::mutex> lock(mUploadMutex);
-        std::move(mUploadTaskQueue.begin(), mUploadTaskQueue.end(), std::back_inserter(newTextureList));
-        mUploadTaskQueue.clear();
-    }
+    TextureList newTextureList = mTexturePool.upload();
 
-    bool isUndo = false;
-    for (auto& newTexture : newTextureList) {
-        ScopeMarker("Upload Texture");
-        newTexture->upload();
-        --mImportRequestNum;
-        const int index = newTexture->index();
-        if (index == -1) {
-            newTexture->index() = static_cast<int>(mImageList.size());
-            mImageList.push_back(std::move(newTexture));
-        } else {
-            isUndo = true;
-            auto it = std::find_if(mImageList.begin(), mImageList.end(), [index](TextureUPtr& tex) {
-                return tex->index() > index;
-            });
-            mImageList.insert(it, std::move(newTexture));
-
-            for (size_t i = 0; i < mCurAction.imageIdxArray.size(); i++) {
-                if (mCurAction.imageIdxArray[i] == index) {
-                    mCurAction.imageIdxArray.erase(mCurAction.imageIdxArray.begin() + i);
-                    mCurAction.filepathArray.erase(mCurAction.filepathArray.begin() + i);
-                    break;
-                }
-            }
+    bool isUndo = mCurAction.type != Action::Type::Unknown;
+    
+    if (isUndo && mTexturePool.hasNoPendingTasks()) {
+        if (mCurAction.type == Action::Type::Remove) {
+            const int curImageNum = static_cast<int>(mImageList.size());
+            mTopImageIndex = std::min(mCurAction.prevTopImageIdx, curImageNum - 1);
+            mCmpImageIndex = std::min(mCurAction.prevCmpImageIdx, curImageNum - 1);
         }
+        
+        mCurAction.reset();
     }
 
-    // Update selected image only when the last import request is done.
-    if (!newTextureList.empty() && !isUndo && mImportRequestNum == 0) {
+    if (newTextureList.empty()) {
+        return;
+    }
+
+    // When we finish importing images, we switch top image to the latest one.
+    if (!isUndo && mTexturePool.hasNoPendingTasks()) {
         mTopImageIndex = static_cast<int>(mImageList.size()) - 1;
         resetImageTransform(getTopImage()->size());
 
         if (mCmpImageIndex == -1 && mTopImageIndex >= 1) {
             mCmpImageIndex = 0;
-        }
-    }
-
-    // If current action is undo of remove.
-    if (isUndo && mCurAction.type == Action::Type::Remove) {
-        int curImageNum = static_cast<int>(mImageList.size());
-        mTopImageIndex = std::min(mCurAction.prevTopImageIdx, curImageNum - 1);
-        mCmpImageIndex = std::min(mCurAction.prevCmpImageIdx, curImageNum - 1);
-
-        if (mCurAction.filepathArray.empty()) {
-            mCurAction.reset();
         }
     }
 }
@@ -569,12 +543,7 @@ void App::run(CompositeFlags initFlags)
 
     // Spawn worker threads to handle import images.
     const unsigned int workerNum = std::thread::hardware_concurrency();
-    PushRangeMarker("Initialize Worker");
-    std::vector<std::thread> workers(workerNum);
-    for (auto& worker : workers) {
-        worker = std::move(std::thread(&App::processImportTasks, this));
-    }
-    PopRangeMarker();
+    mTexturePool.initialize(workerNum);
 
     while (!glfwWindowShouldClose(mWindow)) {
         glfwPollEvents();
@@ -637,7 +606,7 @@ void App::run(CompositeFlags initFlags)
 
         ImGui::Render();
 
-        if (topImage) {
+        if (topImage && topImage->id() != 0) {
             gradingTexImage(*topImage, mTopImageRenderTexIdx);
             if (mShowImagePropWindow && mSupportComputeShader) {
                 float valueScale = topImage->getColorEncodingType() == ColorEncodingType::Linear ? 1.0f : 255.0f;
@@ -646,8 +615,10 @@ void App::run(CompositeFlags initFlags)
         }
 
         if (enableCompareView && mCmpImageIndex >= 0) {
-            Texture* cmpImage = mImageList[mCmpImageIndex].get();
-            gradingTexImage(*cmpImage, mTopImageRenderTexIdx ^ 1);
+            Texture* cmpImage = mImageList[mCmpImageIndex]->getTexture();
+            if (cmpImage->id() != 0) {
+                gradingTexImage(*cmpImage, mTopImageRenderTexIdx ^ 1);
+            }
         }
 
         // We have to apply framebuffer scale for hidh DPI display.
@@ -713,15 +684,7 @@ void App::run(CompositeFlags initFlags)
         glfwSwapBuffers(mWindow);
     }
 
-    {
-        const std::lock_guard<std::mutex> lock(mLoadMutex);
-        mAboutToTerminate = true;
-        mConditionVar.notify_all();
-    }
-
-    for (auto& worker : workers) {
-        worker.join();
-    }
+    mTexturePool.release();
 }
 
 void    App::gradingTexImage(Texture &texture, int renderTexIdx)
@@ -1338,21 +1301,30 @@ void App::initImagePropWindow()
     static const Vec4f activeBorderColor(1.0f, 1.0f, 1.0f, 1.0f);
     static const Vec4f borderColor(1.0f, 1.0f, 1.0f, 0.5f);
     static bool isDraggingImageItem = false;
+    static std::unique_ptr<Action> moveAction;
 
     for (int i = 0; i < imageNum; i++) {
         std::string filename = mImageList[i]->filename();
-        const GLuint texId = mImageList[i]->id();
+        void* addr = mImageList[i].get();
         const auto filenameLength = filename.size();
         if (filenameLength > maxFilenameLength) {
             filename = filename.substr(filenameLength - maxFilenameLength);
-            snprintf(buf, bufSize, "        ...%s##%d", filename.c_str(), texId);
+            snprintf(buf, bufSize, "        ...%s##%p", filename.c_str(), addr);
         } else {
-            snprintf(buf, bufSize, "           %s##%d", filename.c_str(), texId);
+            snprintf(buf, bufSize, "           %s##%p", filename.c_str(), addr);
         }
 
         if (ImGui::Selectable(buf, mTopImageIndex == i && !isDraggingImageItem, 0, Vec2f(propWindowWidth, 24.0f))) {
             if (isDraggingImageItem) {
                 isDraggingImageItem = false;
+                if (moveAction) {
+                    if (moveAction->prevTopImageIdx != mTopImageIndex ||
+                        moveAction->prevCmpImageIdx != mCmpImageIndex) {
+                        appendAction(std::move(*moveAction));
+                    }
+                }
+
+                moveAction.reset();
             } else {
                 mTopImageIndex = i;
                 if (mCmpImageIndex == i) {
@@ -1374,6 +1346,16 @@ void App::initImagePropWindow()
 
         if (ImGui::IsItemActive() && !ImGui::IsItemHovered()) {
             isDraggingImageItem = true;
+            if (!moveAction) {
+                moveAction = std::make_unique<Action>();
+                moveAction->type = Action::Type::Move;
+                for (uint8_t i = 0; i < static_cast<uint8_t>(mImageList.size()); i++) {
+                    moveAction->imageIdxArray.push_back(Action::composeImageIndex(mImageList[i]->id(), i));
+                }
+                moveAction->prevTopImageIdx = mTopImageIndex;
+                moveAction->prevCmpImageIdx = mCmpImageIndex;
+            }
+
             const int nextItemIdx = i + (ImGui::GetMouseDragDelta(0).y < 0.0f ? -1 : 1);
             if (nextItemIdx >= 0 && nextItemIdx < imageNum) {
                 std::swap(mImageList[i], mImageList[nextItemIdx]);
@@ -1399,9 +1381,12 @@ void App::initImagePropWindow()
             }
         }
 
-        ImGui::SameLine(g.Style.ItemSpacing.x);
-        ImGui::Image((void*)(intptr_t)texId, Vec2f(28.0f, 22.0f), Vec2f(0.0f, 0.0f), Vec2f(1.0f, 1.0f),
-            Vec4f(1.0f), mTopImageIndex == i ? activeBorderColor : borderColor);
+        const GLuint texId = mImageList[i]->texId();
+        if (texId != 0) {
+            ImGui::SameLine(g.Style.ItemSpacing.x);
+            ImGui::Image((void*)(intptr_t)texId, Vec2f(28.0f, 22.0f), Vec2f(0.0f, 0.0f), Vec2f(1.0f, 1.0f),
+                Vec4f(1.0f), mTopImageIndex == i ? activeBorderColor : borderColor);
+        }
 
         if ((i == mCmpImageIndex || i == mTopImageIndex) && enableCompareView) {
             ImGui::SameLine(propWindowWidth - g.FontSize - g.Style.ItemSpacing.x * 2.0f);
@@ -1427,7 +1412,7 @@ void App::initImagePropWindow()
 
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_SYNC_ALT "##ReloadImage", buttonSize) && mTopImageIndex > -1) {
-        mImageList[mTopImageIndex]->reloadFile();
+        mImageList[mTopImageIndex]->reload();
     }
     if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Reload Selected Image"); }
 
@@ -1815,6 +1800,7 @@ void App::appendAction(Action&& action)
 {
     mActionStack.push_back(action);
     if (mActionStack.size() > 16) {
+        // Only keep the latest 16 actions.
         mActionStack.pop_front();
     }
 }
@@ -1823,32 +1809,47 @@ void App::undoAction()
 {
     if (mActionStack.empty()) {
         return;
+    } else if (mCurAction.type != Action::Type::Unknown) {
+        // Skip instruction if there is an undo action running currently.
+        return;
     }
-    
+
     Action action = mActionStack.back();
     mActionStack.pop_back();
 
     if (action.type == Action::Type::Remove) {
-        if (mCurAction.type != Action::Type::Unknown) {
-            // Skip instruction if there is an undo action running currently.
-            return;
-        }
-
         mCurAction = action;
         importImageFiles(action.filepathArray, false, &action.imageIdxArray);
     } else if (action.type == Action::Type::Add) {
-        for (int i = static_cast<int>(mImageList.size()) - 1; i >= 0; --i) {
-            Texture* texture = mImageList[i].get();
-
-            const std::string& imageFilePath = texture->filepath();
-            for (const auto& path : action.filepathArray) {
-                if (imageFilePath == path) {
-                    mImageList.pop_back();
+        const int imageCount = static_cast<int>(mImageList.size());
+        for (int i = imageCount - 1; i >= 0; --i) {
+            for (auto index : action.imageIdxArray) {
+                uint8_t layerIndex = Action::extractLayerIndex(index);
+                if (layerIndex == i) {
+                    mImageList.erase(mImageList.begin() + layerIndex);
                     break;
                 }
             }
         }
 
+        mTopImageIndex = action.prevTopImageIdx;
+        mCmpImageIndex = action.prevCmpImageIdx;
+        mTexturePool.cleanUnusedTextures();
+    } else if (action.type == Action::Type::Move) {
+        std::vector<ImageUPtr> newImageList;
+        newImageList.reserve(mImageList.size());
+
+        for (auto index : action.imageIdxArray) {
+            uint8_t id = Action::extractImageId(index);
+            for (auto& image : mImageList) {
+                if (image && image->id() == id) {
+                    newImageList.push_back(std::move(image));
+                    break;
+                }
+            }
+        }
+
+        mImageList.swap(newImageList);
         mTopImageIndex = action.prevTopImageIdx;
         mCmpImageIndex = action.prevCmpImageIdx;
     }
@@ -1900,64 +1901,75 @@ void    App::showExportSessionDlg()
     }
 }
 
-void    App::importImageFiles(const std::vector<std::string>& filepathArray, bool recordAction, std::vector<int>* imageIdxArray)
+// This function is executed in main thread.
+void    App::importImageFiles(const std::vector<std::string>& filepathArray, 
+                              bool recordAction, std::vector<uint16_t>* imageIdxArray)
 {
-    const size_t count = filepathArray.size();
+    const size_t imageNum = filepathArray.size();
 
-    if (count == 0) {
+    if (imageNum == 0) {
         return;
     }
 
     Action action(Action::Type::Add, mTopImageIndex, mCmpImageIndex);
 
-    {
-        const std::lock_guard<std::mutex> lock(mLoadMutex);
+    for (size_t i = 0; i < imageNum; ++i) {
+        std::string path = filepathArray[i];
+        std::replace(path.begin(), path.end(), '\\', '/');
 
-        for (size_t i = 0; i < filepathArray.size(); ++i) {
-            std::string path = filepathArray[i];
-            std::replace(path.begin(), path.end(), '\\', '/');
+        if (!Texture::isSupported(path)) {
+            promptWarning(fmt::format("Unsupported image type for \"{}\"", path));
+            continue;
+        }
+        
+        uint8_t insertIdx = static_cast<uint8_t>(mImageList.size());
+        uint8_t id = 0;
+        if (imageIdxArray) {
+            uint16_t value = (*imageIdxArray)[i];
+            id = Action::extractImageId(value);
+            insertIdx = Action::extractLayerIndex(value);
+        }
 
-            if (Texture::isSupported(path)) {
-                int insertIdx = imageIdxArray ? (*imageIdxArray)[i] : -1;
-                LoadRequest loadRequest = std::make_tuple(path, insertIdx);
-                mLoadRequestQueue.push_back(loadRequest);
+        auto& newTexture = mTexturePool.acquireTexture(path);
+        auto& newImage = std::make_unique<Image>(newTexture, id);
+        mImageList.insert(mImageList.begin() + insertIdx, std::move(newImage));
 
-                action.filepathArray.push_back(path);
-            } else {
-                promptWarning(fmt::format("Unsupported image type for \"{}\"", path));
-            }
+        action.filepathArray.push_back(path);
+        action.imageIdxArray.push_back(Action::composeImageIndex(id, insertIdx));
+
+        if (insertIdx <= mTopImageIndex) {
+            ++mTopImageIndex;
+        }
+
+        if (insertIdx <= mCmpImageIndex) {
+            ++mCmpImageIndex;
         }
     }
-
+    
     if (recordAction) {
         appendAction(std::move(action));
-    }
-
-    if (count == 1) {
-        mConditionVar.notify_one();
-    } else if (count > 1) {
-        mConditionVar.notify_all();  // Wake up all workers to load images.
     }
 }
 
 Texture* App::getTopImage()
 {
-    return mTopImageIndex >= 0 ? mImageList[mTopImageIndex].get() : nullptr;
+    return mTopImageIndex >= 0 ? mImageList[mTopImageIndex]->getTexture() : nullptr;
 }
 
 void    App::removeTopImage(bool recordAction)
 {
-    TextureUPtr texture = std::move(mImageList[mTopImageIndex]);
+    ImageUPtr image = std::move(mImageList[mTopImageIndex]);
     mImageList.erase(mImageList.begin() + mTopImageIndex);
 
     if (recordAction) {
         Action action(Action::Type::Remove, mTopImageIndex, mCmpImageIndex);
-        action.filepathArray.push_back(texture->filepath());
-        action.imageIdxArray.push_back(texture->index());
+        action.filepathArray.push_back(image->filepath());
+        action.imageIdxArray.push_back(Action::composeImageIndex(image->id(), mTopImageIndex));
         appendAction(std::move(action));
     }
-    
-    texture.reset();
+
+    image.reset();
+    mTexturePool.cleanUnusedTextures();
     
     const int imageNum = static_cast<int>(mImageList.size());
     if (imageNum < 2) {
@@ -1974,14 +1986,14 @@ void    App::removeTopImage(bool recordAction)
 
 void    App::clearImages(bool recordAction)
 {
-    Action action(Action::Type::Remove, mTopImageIndex, mCmpImageIndex);
-
-    for (const auto& texture : mImageList) {
-        action.filepathArray.push_back(texture->filepath());
-        action.imageIdxArray.push_back(texture->index());
-    }
-
     if (recordAction) {
+        Action action(Action::Type::Remove, mTopImageIndex, mCmpImageIndex);
+
+        for (int index = 0; index < mImageList.size(); ++index) {
+            action.filepathArray.push_back(mImageList[index]->filepath());
+            action.imageIdxArray.push_back(Action::composeImageIndex(mImageList[index]->id(), index));
+        }
+
         mActionStack.push_back(action);
     }
 
@@ -2071,58 +2083,6 @@ inline bool    App::inSideBySideMode() const
 inline bool    App::shouldShowSplitter() const
 {
     return inCompareMode() && (getPixelMarkerFlags() & static_cast<int>(PixelMarkerFlags::DiffMask)) == 0;
-}
-
-
-//! This function is executed in multiple worker threads. It mainly decode image 
-//! to internal buffer and push entity to mUploadTaskQueue, then the main GL render
-//! thread would upload texture to GPU.
-void    App::processImportTasks()
-{
-    while (true) {
-        
-        bool keepProcessing = false;
-
-        LoadRequest loadRequest;
-
-        {
-            std::unique_lock<std::mutex> lock(mLoadMutex);
-            
-            mConditionVar.wait(lock, [this](){
-                return !mLoadRequestQueue.empty() || mAboutToTerminate;
-            });
-
-            if (mAboutToTerminate) {
-                break;
-            }
-
-            loadRequest = mLoadRequestQueue.front();
-            mLoadRequestQueue.pop_front();
-
-            keepProcessing = mLoadRequestQueue.empty();
-        }
-
-        const std::string& imagePath = std::get<0>(loadRequest);
-
-        if (!imagePath.empty()) {
-            ScopeMarker((std::string("Load texture") + imagePath).c_str());
-            ++mImportRequestNum;
-
-            auto newTexture = std::make_unique<Texture>();
-            if (!newTexture->loadFromFile(imagePath)) {
-                return;
-            }
-
-            newTexture->index() = std::get<1>(loadRequest);
-
-            std::unique_lock<std::mutex> lock(mUploadMutex);
-            mUploadTaskQueue.push_back(std::move(newTexture));
-
-            if (keepProcessing) {
-                mConditionVar.notify_one();
-            }
-        }
-    }
 }
 
 void    App::onFileDrop(int count, const char* filepaths[])

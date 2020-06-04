@@ -2,8 +2,10 @@
 #define BAKTSIU_APP_H_
 
 #include "common.h"
+#include "image.h"
 #include "shader.h"
 #include "texture.h"
+#include "texture_pool.h"
 #include "view.h"
 
 #include <atomic>
@@ -20,15 +22,27 @@ struct  ImGuiIO;
 namespace baktsiu
 {
 
-// This is a basic entity for command stack. It stores relevant data
-// to undo instructions.
+// Basic entity of command stack. It stores relevant data for undo instructions.
 struct Action
 {
+    static uint8_t extractImageId(uint16_t value) {
+        return (value & 0xFF00) >> 8;
+    }
+
+    static uint8_t extractLayerIndex(uint16_t value) {
+        return value & 0xFF;
+    }
+
+    static uint16_t composeImageIndex(uint8_t id, uint8_t order) {
+        return order| id << 8;
+    }
+
     enum class Type : char
     {
         Unknown,
         Add,
         Remove,
+        Move,
     };
 
     Action() 
@@ -50,8 +64,8 @@ struct Action
     }
 
     Type type = Type::Unknown;
-    std::vector<std::string> filepathArray;
-    std::vector<int>         imageIdxArray;
+    std::vector<std::string>    filepathArray;
+    std::vector<uint16_t>       imageIdxArray;
     int prevTopImageIdx = -1;
     int prevCmpImageIdx = -1;
 };
@@ -96,7 +110,8 @@ public:
 public:
     bool    initialize(const char* title, int width, int height);
 
-    void    importImageFiles(const std::vector<std::string>& filepathArray, bool recordAction, std::vector<int>* imageIdxArray = nullptr);
+    void    importImageFiles(const std::vector<std::string>& filepathArray, 
+                bool recordAction, std::vector<uint16_t>* imageIdxArray = nullptr);
 
     void    run(CompositeFlags initFlags = CompositeFlags::Top);
 
@@ -105,7 +120,7 @@ public:
 private:
     void    setThemeColors();
 
-    //! Initialize related bitmap and uv info for text.
+    // Initialize related bitmap and uv info for text.
     void    initDigitCharData(const unsigned char* data);
 
     void    initToolbar();
@@ -135,8 +150,8 @@ private:
 
     void    showExportSessionDlg();
 
-    //! Handle key pressed cases.
-    //! @note Few key pressed events related to image transformation are handled in updateImageTransform.
+    // Handle key pressed cases.
+    // @note Few key pressed events related to image transformation are handled in updateImageTransform.
     void    onKeyPressed(const ImGuiIO&);
 
     void    updateImagePairFromPressedKeys();
@@ -146,16 +161,16 @@ private:
 
     void    updateImageSplitterPos(ImGuiIO&);
 
-    //! Dispatch compute kernels for image statistics.
+    // Dispatch compute kernels for image statistics.
     void    computeImageStatistics(const RenderTexture&, float valueScale);
 
-    //! Reset image transform to viewport center.
+    // Reset image transform to viewport center.
     void    resetImageTransform(const Vec2f& imgSize, bool fitWindow = false);
 
-    //! Synchronize local offset of column views.
+    // Synchronize local offset of column views.
     void    syncSideBySideView(const ImGuiIO& io);
     
-    //! Return pixel coordinates from mouse position.
+    // Return pixel coordinates from mouse position.
     bool    getImageCoordinates(Vec2f viewportCoords, Vec2f& outImageCoords) const;
 
     void    appendAction(Action&& action);
@@ -168,16 +183,14 @@ private:
 
     void    clearImages(bool recordAction);
 
-    void    processImportTasks();
-
     void    processTextureUploadTasks();
 
     void    onFileDrop(int count, const char* filepaths[]);
 
-    //! Open compare session.
+    // Open compare session.
     void    openSession(const std::string& filepath);
 
-    //! Save compare session with file extension .bts
+    // Save compare session with file extension .bts
     void    saveSession(const std::string& filepath);
 
     void    gradingTexImage(Texture &, int renderTexIdx);
@@ -198,24 +211,17 @@ private:
     void    toggleSideBySideView();
 
 private:
-    // Request item to load image file into specific position of image layers in image property window.
-    using LoadRequest = std::tuple<std::string, int>;
-    using TextureUPtr = std::unique_ptr<Texture>;
+    using ImageUPtr = std::unique_ptr<Image>;
 
-    std::vector<TextureUPtr>    mImageList;
-    std::deque<LoadRequest>     mLoadRequestQueue;
-    std::deque<TextureUPtr>     mUploadTaskQueue;
-    std::mutex                  mLoadMutex;
-    std::mutex                  mUploadMutex;
-    std::condition_variable     mConditionVar;
+    std::vector<ImageUPtr>      mImageList;
     std::deque<Action>          mActionStack;
     Action                      mCurAction;
-    std::atomic<int>            mImportRequestNum = { 0 };
+    TexturePool                 mTexturePool;
 
-    GLFWwindow* mWindow = nullptr;
-    ImFont*     mSmallFont = nullptr;
-    ImFont*     mSmallIconFont = nullptr;
-    GLuint      mFontTexture = 0;
+    GLFWwindow*     mWindow = nullptr;
+    ImFont*         mSmallFont = nullptr;
+    ImFont*         mSmallIconFont = nullptr;
+    GLuint          mFontTexture = 0;
     
     std::vector<Vec4f> mCharUvRanges;   // UV bbox of each digit in font texture.
     std::vector<Vec4f> mCharUvXforms;   // UV offset of each digit in font texture.

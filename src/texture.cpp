@@ -138,6 +138,8 @@ bool Texture::reloadFile()
 
 bool Texture::upload()
 {
+    ScopeMarker(__FUNCTION__);
+
     if (!mBuffer) {
         return false;
     }
@@ -161,7 +163,7 @@ bool Texture::upload()
 
     stbi_image_free(mBuffer);
     mBuffer = nullptr;
-        
+
     return true;
 }
 
