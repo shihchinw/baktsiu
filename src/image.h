@@ -25,14 +25,25 @@ public:
 
     uint8_t id() const;
 
-    //! Reload corresponding texture data.
+    // Reload corresponding texture data.
     bool    reload();
 
     Vec2f   size() const;
 
+    ColorPrimaryType getColorPrimaryType() const { return mColorPrimaryType; }
+
+    // Return the color encoding type.
+    ColorEncodingType getColorEncodingType() const { return mColorEncodingType; }
+
+    void    setColorPrimaryType(ColorPrimaryType value) { mColorPrimaryType = value; }
+
+    void    setColorEncodingType(ColorEncodingType value) { mColorEncodingType = value; }
+
 private:
-    TextureSPtr     mTexture;
-    uint8_t         mId = 0;
+    TextureSPtr         mTexture;
+    uint8_t             mId = 0;
+    ColorPrimaryType    mColorPrimaryType = ColorPrimaryType::sRGB;
+    ColorEncodingType   mColorEncodingType = ColorEncodingType::sRGB;
 };
 
 }  // namespace baktsiu

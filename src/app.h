@@ -177,7 +177,7 @@ private:
 
     void    undoAction();
 
-    Texture*    getTopImage();
+    Image*  getTopImage();
 
     void    removeTopImage(bool recordAction);
 
@@ -193,7 +193,7 @@ private:
     // Save compare session with file extension .bts
     void    saveSession(const std::string& filepath);
 
-    void    gradingTexImage(Texture &, int renderTexIdx);
+    void    gradingTexImage(Image& image, int renderTexIdx);
 
     // Return the width of property window at right hand side.
     float   getPropWindowWidth() const;
@@ -233,6 +233,7 @@ private:
     Shader          mPresentShader;
     Shader          mStatisticsShader;
     GLuint          mTexHistogram;
+    Sampler         mPointSampler;
     
     std::array<int, 768> mHistogram;
 
@@ -274,6 +275,7 @@ private:
     bool        mShowImageNameOverlay = true;
     bool        mShowPixelMarker = false;
     bool        mSupportComputeShader = false;
+    bool        mUpdateImageSelection = false;
 };
 
 }  // namespace baktsiu

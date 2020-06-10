@@ -26,6 +26,7 @@ enum class ImageType : char
     DNG
 };
 
+
 // Internal texture object.
 class Texture
 {
@@ -58,31 +59,19 @@ public:
 
     Vec2f   size() const { return Vec2f(mWidth, mHeight); }
 
-    void    setFilter(bool value);
+    void    bind();
+
+    void    unbind();
 
     inline const std::string& filename() const { return mFileName; }
 
     inline const std::string& filepath() const { return mFilePath; }
-
-    ColorPrimaryType getColorPrimaryType() const { return mColorPrimaryType; }
-
-    // Return the color encoding type.
-    ColorEncodingType getColorEncodingType() const { return mColorEncodingType; }
-    
-    void    setColorPrimaryType(ColorPrimaryType value) { mColorPrimaryType = value; }
-
-    void    setColorEncodingType(ColorEncodingType value) { mColorEncodingType = value; }
 
 private:
     std::string     mFilePath;
     std::string     mFileName;
 
     uint8_t*        mBuffer = nullptr;
-    
-    ImageType           mImageType = ImageType::Unknown;
-    ColorPrimaryType    mColorPrimaryType = ColorPrimaryType::sRGB;
-    ColorEncodingType   mColorEncodingType = ColorEncodingType::sRGB;
-
     GLuint          mTexId = 0;
     GLenum          mImageFormat = GL_RGBA8;
     GLenum          mPixelDataType = GL_UNSIGNED_BYTE;
@@ -102,18 +91,16 @@ using TextureList = std::vector<TextureSPtr>;
 class RenderTexture
 {
 public:
-    bool    initialize(const Vec2i& size, GLenum imageFormat, bool bind);
+    bool    bindAsOutput(const Vec2i& size, GLenum imageFormat);
 
     void    release();
 
-    void    setFilter(bool useLinearFilter);
+    void    bindAsInput(bool useLinearFilter);
 
     // Return id of output texture.
     GLuint  id() const { return mTexId; }
 
     Vec2i   size() const { return mSize; }
-
-    void    bind();
 
     void    unbind();
 
@@ -125,6 +112,23 @@ private:
     GLenum  mImageFormat;
     GLenum  mPixelDataType;
     bool    mUseLinearFilter = true;
+};
+
+
+// Wrapper of texture sampler.
+class Sampler
+{
+public:
+    bool    initialize(GLenum minFilter, GLenum magFilter);
+    
+    void    release();
+
+    void    bind(GLuint);
+
+    void    unbind(GLuint);
+
+private:
+    GLuint  mId = 0;
 };
 
 }  // namespace baktsiu

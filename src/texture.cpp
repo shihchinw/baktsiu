@@ -67,23 +67,18 @@ Texture::~Texture()
 
 bool Texture::loadFromFile(const std::string& filepath)
 {
-    //stbi_set_flip_vertically_on_load(1);
-
-    const std::string extension = filepath.substr(filepath.find_last_of('.') + 1);
-
-    mImageType = getImageType(filepath);
+    ImageType imageType = getImageType(filepath);
 
     uint8_t* buffer = nullptr;
-    if (mImageType == ImageType::HDR) {
+    if (imageType == ImageType::HDR) {
         PushRangeMarker(__FUNCTION__);
         buffer = reinterpret_cast<uint8_t*>(stbi_loadf(filepath.c_str(), &mWidth, &mHeight, &mChannelNum, 4));
         mPixelDataType = GL_FLOAT;
         mImageFormat = GL_RGBA16F;
-        mColorEncodingType = ColorEncodingType::Linear;
         PopRangeMarker();
     }
 #ifdef USE_OPENEXR
-    else if (mImageType == ImageType::OPENEXR) {
+    else if (imageType == ImageType::OPENEXR) {
         Imf::setGlobalThreadCount(std::thread::hardware_concurrency());
 
         Imf::RgbaInputFile file(filepath.c_str());
@@ -99,14 +94,12 @@ bool Texture::loadFromFile(const std::string& filepath)
         
         mPixelDataType = GL_HALF_FLOAT;
         mImageFormat = GL_RGBA16F;
-        mColorEncodingType = ColorEncodingType::Linear;
     }
 #endif
     else {
         buffer = stbi_load(filepath.c_str(), &mWidth, &mHeight, &mChannelNum, 4);
         mPixelDataType = GL_UNSIGNED_BYTE;
         mImageFormat = GL_RGBA8;
-        mColorEncodingType = ColorEncodingType::sRGB;
     }
 
     if (!buffer) {
@@ -128,12 +121,7 @@ bool Texture::loadFromFile(const std::string& filepath)
 
 bool Texture::reloadFile()
 {
-    if (loadFromFile(mFilePath)) {
-        upload();
-        return true;
-    }
-
-    return false;
+    return loadFromFile(mFilePath) && upload();
 }
 
 bool Texture::upload()
@@ -180,35 +168,29 @@ void Texture::release()
     }
 }
 
-void    Texture::setFilter(bool useLinearFilter)
+void    Texture::bind()
 {
     glBindTexture(GL_TEXTURE_2D, mTexId);
+}
 
-    if (useLinearFilter == mUseLinearFilter) {
-        return;
-    }
-
-    // Setup filtering parameters for display
-    GLint filterType = useLinearFilter ? GL_LINEAR : GL_NEAREST;
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filterType);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filterType);
-    mUseLinearFilter = useLinearFilter;
+void    Texture::unbind()
+{
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 //-----------------------------------------------------------------------------
 
-bool    RenderTexture::initialize(const Vec2i& size, GLenum imageFormat, bool bind)
+bool    RenderTexture::bindAsOutput(const Vec2i& size, GLenum imageFormat)
 {
     if (mSize == size && mImageFormat == imageFormat) {
-        if (bind) {
-            glBindFramebuffer(GL_FRAMEBUFFER, mFboId);
-        }
+        glBindFramebuffer(GL_FRAMEBUFFER, mFboId);
         return true;
     }
     
     if (mTexId == 0) {
         glGenTextures(1, &mTexId);
     }
+
     glBindTexture(GL_TEXTURE_2D, mTexId);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -224,17 +206,17 @@ bool    RenderTexture::initialize(const Vec2i& size, GLenum imageFormat, bool bi
     glBindFramebuffer(GL_FRAMEBUFFER, mFboId);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mTexId, 0);
 
+#ifdef _DEBUG
     bool isValid = (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
-
-    if (isValid) {
-        mSize = size;
-        mImageFormat = imageFormat;
+    if (!isValid) {
+        return false;
     }
+#endif
 
-    if (!bind) {
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    }
-    return isValid;
+    mSize = size;
+    mImageFormat = imageFormat;
+
+    return true;
 }
 
 void    RenderTexture::release()
@@ -246,7 +228,7 @@ void    RenderTexture::release()
     mFboId = 0;
 }
 
-void    RenderTexture::setFilter(bool useLinearFilter)
+void    RenderTexture::bindAsInput(bool useLinearFilter)
 {
     glBindTexture(GL_TEXTURE_2D, mTexId);
 
@@ -261,14 +243,43 @@ void    RenderTexture::setFilter(bool useLinearFilter)
     mUseLinearFilter = useLinearFilter;
 }
 
-void    RenderTexture::bind()
-{
-    glBindFramebuffer(GL_FRAMEBUFFER, mFboId);
-}
-
 void    RenderTexture::unbind()
 {
+    glBindTexture(GL_TEXTURE_2D, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
+
+//-----------------------------------------------------------------------------
+
+bool    Sampler::initialize(GLenum minFilter, GLenum magFilter)
+{
+    if (mId == 0) {
+        glGenSamplers(1, &mId);
+    }
+
+    glSamplerParameteri(mId, GL_TEXTURE_MIN_FILTER, minFilter);
+    glSamplerParameteri(mId, GL_TEXTURE_MAG_FILTER, magFilter);
+    glSamplerParameteri(mId, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glSamplerParameteri(mId, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glSamplerParameteri(mId, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    return mId > 0;
+}
+
+void    Sampler::release()
+{
+    glDeleteSamplers(1, &mId);
+}
+
+void    Sampler::bind(GLuint unit)
+{
+    glBindSampler(unit, mId);
+}
+
+void    Sampler::unbind(GLuint unit)
+{
+    glBindSampler(unit, 0);
+}
+
 
 }  // namespace baktsiu

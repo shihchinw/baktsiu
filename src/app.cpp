@@ -449,6 +449,8 @@ bool App::initialize(const char* title, int width, int height)
         status = mStatisticsShader.initCompute("statistics", statistics_comp);
     }
 
+    mPointSampler.initialize(GL_NEAREST, GL_NEAREST);
+
     return status;
 }
 
@@ -493,6 +495,7 @@ void App::release()
 {
     // Cleanup
     mImageList.clear();
+    mPointSampler.release();
 
     mPresentShader.release();
     mGradingShader.release();
@@ -510,19 +513,20 @@ void App::processTextureUploadTasks()
 {
     TextureList newTextureList = mTexturePool.upload();
 
-    bool isUndo = mCurAction.type != Action::Type::Unknown;
+    bool isUndo = (mCurAction.type != Action::Type::Unknown);
     
     if (isUndo && mTexturePool.hasNoPendingTasks()) {
         if (mCurAction.type == Action::Type::Remove) {
             const int curImageNum = static_cast<int>(mImageList.size());
             mTopImageIndex = std::min(mCurAction.prevTopImageIdx, curImageNum - 1);
             mCmpImageIndex = std::min(mCurAction.prevCmpImageIdx, curImageNum - 1);
+            mUpdateImageSelection = false;
         }
         
         mCurAction.reset();
     }
 
-    if (newTextureList.empty()) {
+    if (newTextureList.empty() && !mUpdateImageSelection) {
         return;
     }
 
@@ -534,6 +538,8 @@ void App::processTextureUploadTasks()
         if (mCmpImageIndex == -1 && mTopImageIndex >= 1) {
             mCmpImageIndex = 0;
         }
+
+        mUpdateImageSelection = false;
     }
 }
 
@@ -571,7 +577,7 @@ void App::run(CompositeFlags initFlags)
         }
 
         onKeyPressed(io);
-        Texture* topImage = getTopImage();
+        Image* topImage = getTopImage();
         Vec2f imageSize = topImage ? topImage->size() : Vec2f(1.0f);
 
         const bool useColumnView = inSideBySideMode();
@@ -606,7 +612,7 @@ void App::run(CompositeFlags initFlags)
 
         ImGui::Render();
 
-        if (topImage && topImage->id() != 0) {
+        if (topImage && topImage->texId() != 0) {
             gradingTexImage(*topImage, mTopImageRenderTexIdx);
             if (mShowImagePropWindow && mSupportComputeShader) {
                 float valueScale = topImage->getColorEncodingType() == ColorEncodingType::Linear ? 1.0f : 255.0f;
@@ -615,8 +621,8 @@ void App::run(CompositeFlags initFlags)
         }
 
         if (enableCompareView && mCmpImageIndex >= 0) {
-            Texture* cmpImage = mImageList[mCmpImageIndex]->getTexture();
-            if (cmpImage->id() != 0) {
+            Image* cmpImage = mImageList[mCmpImageIndex].get();
+            if (cmpImage->texId() != 0) {
                 gradingTexImage(*cmpImage, mTopImageRenderTexIdx ^ 1);
             }
         }
@@ -641,7 +647,7 @@ void App::run(CompositeFlags initFlags)
         const bool forceNearestFilter = imageScale > 5.0f;
 
         if (topImage) {
-            mRenderTextures[mTopImageRenderTexIdx].setFilter(mUseLinearFilter && !forceNearestFilter);
+            mRenderTextures[mTopImageRenderTexIdx].bindAsInput(mUseLinearFilter && !forceNearestFilter);
 
             Vec2f imageSize = topImage->size();
             mPresentShader.setUniform("uImageSize", imageSize * imageScale);
@@ -668,7 +674,7 @@ void App::run(CompositeFlags initFlags)
 
         if (enableCompareView && mCmpImageIndex >= 0) {
             glActiveTexture(GL_TEXTURE1);
-            mRenderTextures[mTopImageRenderTexIdx ^ 1].setFilter(mUseLinearFilter && !forceNearestFilter);
+            mRenderTextures[mTopImageRenderTexIdx ^ 1].bindAsInput(mUseLinearFilter && !forceNearestFilter);
             mPresentShader.setUniform("uImage2", 1);
             mPresentShader.setUniform("uOffsetExtra", bottomView.getImageOffset());
             mPresentShader.setUniform("uRelativeOffset", (bottomView.getLocalOffset() - topView.getLocalOffset()) * mImageScale);
@@ -687,10 +693,10 @@ void App::run(CompositeFlags initFlags)
     mTexturePool.release();
 }
 
-void    App::gradingTexImage(Texture &texture, int renderTexIdx)
+void    App::gradingTexImage(Image& image, int renderTexIdx)
 {
-    const Vec2i size = texture.size();
-    mRenderTextures[renderTexIdx].initialize(size, GL_RGBA16F, true);
+    const Vec2i size = image.size();
+    mRenderTextures[renderTexIdx].bindAsOutput(size, GL_RGBA16F);
 
     glViewport(0, 0, size.x, size.y);
     glClearColor(0.45f, 0.55f, 0.6f, 1.0f);
@@ -698,17 +704,22 @@ void    App::gradingTexImage(Texture &texture, int renderTexIdx)
     glDepthMask(GL_FALSE);
     glDisable(GL_DEPTH_TEST);
 
-    mGradingShader.bind();
-    
+    const int textureUnit = 0;
     glActiveTexture(GL_TEXTURE0);
-    texture.setFilter(false);
-    mGradingShader.setUniform("uImage", 0);
+    image.getTexture()->bind();
+    mPointSampler.bind(textureUnit);
+
+    mGradingShader.bind();
+    mGradingShader.setUniform("uImage", textureUnit);
     mGradingShader.setUniform("uEV", mExposureValue);
     mGradingShader.setUniform("uInImageProp", Vec2i(
-        static_cast<int>(texture.getColorEncodingType()),
-        static_cast<int>(texture.getColorPrimaryType())));
+        static_cast<int>(image.getColorEncodingType()),
+        static_cast<int>(image.getColorPrimaryType())));
 
     mGradingShader.drawTriangle();
+
+    image.getTexture()->unbind();
+    mPointSampler.unbind(textureUnit);
     mRenderTextures[renderTexIdx].unbind();
 }
 
@@ -761,8 +772,8 @@ void    App::onKeyPressed(const ImGuiIO& io)
     } else if (ImGui::IsKeyPressed(0x122)) { // F1
         ImGui::OpenPopup("Home");
     } else if (ImGui::IsKeyPressed(0x126)) { // F5
-        Texture* image = getTopImage();
-        if (image) image->reloadFile();
+        Image* image = getTopImage();
+        if (image) image->reload();
     } else if (ImGui::IsKeyPressed(0x103) || ImGui::IsKeyPressed(0x105)) { // Backspace/Del
         if (mTopImageIndex > -1) ImGui::OpenPopup(kImageRemoveDlgTitle);
     } else {
@@ -807,7 +818,7 @@ void    App::syncSideBySideView(const ImGuiIO& io)
 
 void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
 {
-    Texture* topImage = getTopImage();
+    Image* topImage = getTopImage();
     if (!topImage) {
         return;
     }
@@ -1924,26 +1935,33 @@ void    App::importImageFiles(const std::vector<std::string>& filepathArray,
         
         uint8_t insertIdx = static_cast<uint8_t>(mImageList.size());
         uint8_t id = 0;
+
         if (imageIdxArray) {
             uint16_t value = (*imageIdxArray)[i];
             id = Action::extractImageId(value);
             insertIdx = Action::extractLayerIndex(value);
+
+            if (insertIdx <= mTopImageIndex) {
+                ++mTopImageIndex;
+            }
+
+            if (insertIdx <= mCmpImageIndex) {
+                ++mCmpImageIndex;
+            }
         }
 
         auto& newTexture = mTexturePool.acquireTexture(path);
         auto& newImage = std::make_unique<Image>(newTexture, id);
         mImageList.insert(mImageList.begin() + insertIdx, std::move(newImage));
 
+        const ImageType imageType = Texture::getImageType(path);
+        if (imageType == ImageType::HDR || imageType == ImageType::OPENEXR) {
+            newImage->setColorEncodingType(ColorEncodingType::Linear);
+        }
+
         action.filepathArray.push_back(path);
         action.imageIdxArray.push_back(Action::composeImageIndex(id, insertIdx));
-
-        if (insertIdx <= mTopImageIndex) {
-            ++mTopImageIndex;
-        }
-
-        if (insertIdx <= mCmpImageIndex) {
-            ++mCmpImageIndex;
-        }
+        mUpdateImageSelection = true;
     }
     
     if (recordAction) {
@@ -1951,9 +1969,9 @@ void    App::importImageFiles(const std::vector<std::string>& filepathArray,
     }
 }
 
-Texture* App::getTopImage()
+Image* App::getTopImage()
 {
-    return mTopImageIndex >= 0 ? mImageList[mTopImageIndex]->getTexture() : nullptr;
+    return mTopImageIndex >= 0 ? mImageList[mTopImageIndex].get() : nullptr;
 }
 
 void    App::removeTopImage(bool recordAction)
