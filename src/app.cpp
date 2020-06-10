@@ -1345,7 +1345,10 @@ void App::initImagePropWindow()
         }
 
         // Right click mouse to set compared imaeg directly.
-        if (ImGui::IsItemClicked(1) && mTopImageIndex != i) {
+        if (ImGui::IsItemClicked(1)) {
+            if (mTopImageIndex == i) {
+                mTopImageIndex = mCmpImageIndex;
+            }
             mCmpImageIndex = i;
         }
 
