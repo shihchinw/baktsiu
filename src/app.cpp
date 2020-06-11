@@ -1074,14 +1074,14 @@ void    App::initToolbar()
     const bool couldCompare = mImageList.size() > 1;
     bool inSplitView = (mCompositeFlags == CompositeFlags::Split);
     if (ToggleButton(ICON_FA_I_CURSOR, &inSplitView, buttonSize, couldCompare)) {
-        mCompositeFlags = inSplitView ? CompositeFlags::Split : CompositeFlags::Top;
+        toggleSplitView();
     }
     if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Split View"); }
 
     ImGui::SameLine();
-    bool inSideBySideView = (mCompositeFlags == CompositeFlags::SideBySide);
+    bool inSideBySideView = inSideBySideMode();
     if (ToggleButton(ICON_FA_COLUMNS, &inSideBySideView, buttonSize, couldCompare)) {
-        mCompositeFlags = inSideBySideView ? CompositeFlags::SideBySide : CompositeFlags::Top;
+        toggleSideBySideView();
     }
     if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Side by Side View"); }
 
@@ -1870,7 +1870,13 @@ void App::undoAction()
 
         mTopImageIndex = action.prevTopImageIdx;
         mCmpImageIndex = action.prevCmpImageIdx;
+
+        if (mTopImageIndex == -1 && mCmpImageIndex == -1) {
+            mCompositeFlags = CompositeFlags::Top;
+        }
+
         mTexturePool.cleanUnusedTextures();
+
     } else if (action.type == Action::Type::Move) {
         std::vector<ImageUPtr> newImageList;
         newImageList.reserve(mImageList.size());
@@ -2119,7 +2125,7 @@ inline void    App::toggleSideBySideView()
 
 inline bool    App::inCompareMode() const
 {
-    return (mCompositeFlags & (CompositeFlags::Split | CompositeFlags::SideBySide)) != CompositeFlags::Top;
+    return mCmpImageIndex != -1 && (mCompositeFlags & (CompositeFlags::Split | CompositeFlags::SideBySide)) != CompositeFlags::Top;
 }
 
 inline bool    App::inSideBySideMode() const
