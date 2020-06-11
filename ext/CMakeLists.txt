@@ -5,9 +5,6 @@ set(IMGUI_SRC_FILES ${SRC_FILES} PARENT_SCOPE)
 file(GLOB SRC_FILES gl3w/GL/*.h gl3w/GL/*.c)
 set(GL3W_SRC_FILES ${SRC_FILES} PARENT_SCOPE)
 
-file(GLOB SRC_FILES fmt/*.h fmt/*.cc)
-set(FMT_SRC_FILES ${SRC_FILES} PARENT_SCOPE)
-
 file(GLOB SRC_FILES docopt/*.h docopt/*.cpp)
 set(DOCOPT_SRC_FILES ${SRC_FILES} PARENT_SCOPE)
 
@@ -49,6 +46,13 @@ if(USE_OPENEXR)
     add_subdirectory(openexr EXCLUDE_FROM_ALL)
     set_property(TARGET IexMath IlmThread Half Iex Imath IlmImf PROPERTY FOLDER "Dependencies")
 endif()
+
+# spdlog
+set(SPDLOG_BUILD_SHARED OFF CACHE BOOL " " FORCE)
+set(SPDLOG_ENABLE_PCH OFF CACHE BOOL " " FORCE)
+set(SPDLOG_NO_EXCEPTIONS ON CACHE BOOL " " FORCE)
+add_subdirectory(spdlog)
+set_property(TARGET spdlog PROPERTY FOLDER "Dependencies")
 
 set(EXT_INCLUDE_DIRS 
     ${CMAKE_CURRENT_SOURCE_DIR} 

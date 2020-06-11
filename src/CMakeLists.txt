@@ -58,13 +58,12 @@ elseif(UNIX AND NOT APPLE)
 endif()
 
 add_executable(${PROJECT_NAME} ${SRC_FILES} ${IMGUI_SRC_FILES} 
-               ${GL3W_SRC_FILES} ${FMT_SRC_FILES} ${DOCOPT_SRC_FILES} ${EXTRA_SRC_FILES})
+               ${GL3W_SRC_FILES} ${DOCOPT_SRC_FILES} ${EXTRA_SRC_FILES})
 source_group("External Files\\gl3w"   FILES ${GL3W_SRC_FILES})
 source_group("External Files\\imgui"  FILES ${IMGUI_SRC_FILES})
-source_group("External Files\\fmt"    FILES ${FMT_SRC_FILES})
 source_group("External Files\\docopt" FILES ${DOCOPT_SRC_FILES})
 
-target_link_libraries(${PROJECT_NAME} PRIVATE glfw ${GL_LIBS} ${OPENEXR_LIB})
+target_link_libraries(${PROJECT_NAME} PRIVATE glfw spdlog ${GL_LIBS} ${OPENEXR_LIB})
 
 if(USE_OPENEXR AND WIN32)
     target_link_libraries(${PROJECT_NAME} PRIVATE zlibstatic)

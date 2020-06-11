@@ -9,12 +9,22 @@
 #include <iostream>
 #include <vector>
 
-#include <fmt/core.h>
 #include <glm/glm.hpp>
 
+#pragma warning(push)
+#pragma warning(disable: 4819 4566)
+#include <spdlog/fmt/fmt.h>
+#include <spdlog/spdlog.h>
+#pragma warning(pop)
+
+
+#define LOGI(...) spdlog::info(__VA_ARGS__);
+#define LOGW(...) spdlog::warn(__VA_ARGS__);
+#define LOGE(...) spdlog::error("[{}:{}] {}", __FILE__, __LINE__, fmt::format(__VA_ARGS__));
+#define LOGD(...) spdlog::debug(__VA_ARGS__);
 
 #define CHECK_AND_RETURN_IT(status, msg) \
-if (!status)  promptError(msg)
+do { if (!status)  LOGE(msg); } while (0)
 
 #if defined USE_NVTX
 #include <nvToolsExt.h>
@@ -88,76 +98,6 @@ using Mat3f = glm::mat3x3;
 using Mat4f = glm::mat4x4;
 
 const float kPI = 3.14159265358979323846f;
-
-inline void prompt(const std::string& msg)
-{
-    std::cout << "[BakTsiu] " << msg << "\n";
-}
-
-inline void promptWarning(const std::string& msg) 
-{
-    std::cerr << "[BakTsiu | WARNING] " << msg << "\n";
-}
-
-inline void promptError(const std::string& msg)
-{
-    std::cerr << "[BakTsiu | ERROR] " << msg << "\n";
-}
-
-
-//// Code from Instant-Meshes
-//template <typename TimeT = std::chrono::milliseconds>
-//class Timer
-//{
-//public:
-//    Timer()
-//    {
-//        start = std::chrono::system_clock::now();
-//    }
-//
-//    size_t value() const
-//    {
-//        auto now = std::chrono::system_clock::now();
-//        auto duration = std::chrono::duration_cast<TimeT>(now - start);
-//        return (size_t)duration.count();
-//    }
-//
-//    size_t reset()
-//    {
-//        auto now = std::chrono::system_clock::now();
-//        auto duration = std::chrono::duration_cast<TimeT>(now - start);
-//        start = now;
-//        return (size_t)duration.count();
-//    }
-//private:
-//    std::chrono::system_clock::time_point start;
-//};
-//
-//inline std::string timeString(double time, bool precise = false)
-//{
-//    if (std::isnan(time) || std::isinf(time))
-//        return "inf";
-//
-//    std::string suffix = "ms";
-//    if (time > 1000) {
-//        time /= 1000; suffix = "s";
-//        if (time > 60) {
-//            time /= 60; suffix = "m";
-//            if (time > 60) {
-//                time /= 60; suffix = "h";
-//                if (time > 12) {
-//                    time /= 12; suffix = "d";
-//                }
-//            }
-//        }
-//    }
-//
-//    std::ostringstream os;
-//    os << std::setprecision(precise ? 4 : 1)
-//        << std::fixed << time << suffix;
-//
-//    return os.str();
-//}
 
 }  // namespace baktsiu
 #endif // BAKTSIU_COMMON_H_

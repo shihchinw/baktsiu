@@ -1,14 +1,13 @@
 #include <algorithm>
+#include <bitset>
+#include <cctype>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
 #include <string>
-#include <cctype>
-#include <bitset>
 
 #include <docopt/docopt.h>
-#include <fmt/core.h>
 
 static const char USAGE[] =
 R"(res2c. Convert resource files to code.

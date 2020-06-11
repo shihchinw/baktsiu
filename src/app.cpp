@@ -6,12 +6,16 @@
 #include "imgui_impl_opengl3.h"
 
 #pragma warning(push)
-#pragma warning(disable: 4819)
+#pragma warning(disable: 4819 4566)
 #include "portable_file_dialogs.h"      // File dialogs.
 
 #include <GL/gl3w.h>    // Initialize with gl3wInit()
 #include <GLFW/glfw3.h>
+
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
 #pragma warning(pop)
+
 
 #include <fstream>
 #include <memory>
@@ -53,40 +57,41 @@ void APIENTRY glDebugOutput(GLenum source, GLenum type, GLuint id, GLenum severi
     GLsizei length, const GLchar *message, void *userParam)
 {
     // Ignore non-significant error/warning codes
-    if (id == 131169 || id == 131185 || id == 131218 || id == 131204) return;
+    if (id == 131169 || id == 131185 || id == 131218 || id == 131204 || id == 131184) return;
 
-    std::cout << "[" << id << "] ";
+    std::string sourceDesc;
+    std::string typeDesc;
+    std::string severityDesc;
 
     switch (source) {
-    case GL_DEBUG_SOURCE_API:             std::cout << "API"; break;
-    case GL_DEBUG_SOURCE_WINDOW_SYSTEM:   std::cout << "Window System"; break;
-    case GL_DEBUG_SOURCE_SHADER_COMPILER: std::cout << "Shader Compiler"; break;
-    case GL_DEBUG_SOURCE_THIRD_PARTY:     std::cout << "Third Party"; break;
-    case GL_DEBUG_SOURCE_APPLICATION:     std::cout << "Application"; break;
-    case GL_DEBUG_SOURCE_OTHER:           std::cout << "Other"; break;
+        case GL_DEBUG_SOURCE_API:             { sourceDesc = "API"; break; }
+        case GL_DEBUG_SOURCE_WINDOW_SYSTEM:   { sourceDesc = "Window System"; break; }
+        case GL_DEBUG_SOURCE_SHADER_COMPILER: { sourceDesc = "Shader Compiler"; break; }
+        case GL_DEBUG_SOURCE_THIRD_PARTY:     { sourceDesc = "Third Party"; break; }
+        case GL_DEBUG_SOURCE_APPLICATION:     { sourceDesc = "Application"; break; }
+        case GL_DEBUG_SOURCE_OTHER:           { sourceDesc = "Other"; break; }
     }
 
     switch (type) {
-    case GL_DEBUG_TYPE_ERROR:               std::cout << ", Error"; break;
-    case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: std::cout << ", Deprecated Behaviour"; break;
-    case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:  std::cout << ", Undefined Behaviour"; break;
-    case GL_DEBUG_TYPE_PORTABILITY:         std::cout << ", Portability"; break;
-    case GL_DEBUG_TYPE_PERFORMANCE:         std::cout << ", Performance"; break;
-    case GL_DEBUG_TYPE_MARKER:              std::cout << ", Marker"; break;
-    case GL_DEBUG_TYPE_PUSH_GROUP:          std::cout << ", Push Group"; break;
-    case GL_DEBUG_TYPE_POP_GROUP:           std::cout << ", Pop Group"; break;
-    case GL_DEBUG_TYPE_OTHER:               std::cout << ", Other"; break;
+        case GL_DEBUG_TYPE_ERROR:               typeDesc = "Error"; break;
+        case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: typeDesc = "Deprecated Behaviour"; break;
+        case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:  typeDesc = "Undefined Behaviour"; break;
+        case GL_DEBUG_TYPE_PORTABILITY:         typeDesc = "Portability"; break;
+        case GL_DEBUG_TYPE_PERFORMANCE:         typeDesc = "Performance"; break;
+        case GL_DEBUG_TYPE_MARKER:              typeDesc = "Marker"; break;
+        case GL_DEBUG_TYPE_PUSH_GROUP:          typeDesc = "Push Group"; break;
+        case GL_DEBUG_TYPE_POP_GROUP:           typeDesc = "Pop Group"; break;
+        case GL_DEBUG_TYPE_OTHER:               typeDesc = "Other"; break;
     }
 
     switch (severity) {
-    case GL_DEBUG_SEVERITY_HIGH:         std::cout << ", Severity high ]"; break;
-    case GL_DEBUG_SEVERITY_MEDIUM:       std::cout << ", Severity medium ]"; break;
-    case GL_DEBUG_SEVERITY_LOW:          std::cout << ", Severity low ]"; break;
-    case GL_DEBUG_SEVERITY_NOTIFICATION: std::cout << ", Severity notification ]"; break;
+    case GL_DEBUG_SEVERITY_HIGH:         severityDesc = "high"; break;
+    case GL_DEBUG_SEVERITY_MEDIUM:       severityDesc = "medium"; break;
+    case GL_DEBUG_SEVERITY_LOW:          severityDesc = "low"; break;
+    case GL_DEBUG_SEVERITY_NOTIFICATION: severityDesc = "notification"; break;
     }
 
-    std::cout << "\n\n" << message;
-    std::cout << "\n---------------\n\n";
+    LOGW("{} {} No.{} ({}):\n{}", sourceDesc, typeDesc, id, severityDesc, message);
 }
 
 // See more implementations about toggle button https://github.com/ocornut/imgui/issues/1537
@@ -307,14 +312,30 @@ void    App::setThemeColors()
     colors[ImGuiCol_SliderGrabActive] = colors[ImGuiCol_ButtonHovered];
 }
 
+void App::initLogger()
+{
+    auto console = spdlog::stdout_color_mt("console");
+    console->set_pattern("[BakTsiu][%^%l%$] %v");
+
+#ifdef _DEBUG
+    console->set_level(spdlog::level::debug);
+#else
+    console->set_level(spdlog::level::info);
+#endif
+
+    spdlog::set_default_logger(console);
+}
 
 bool App::initialize(const char* title, int width, int height)
 {
+    initLogger();
+
     glfwSetErrorCallback([](int error, const char* description) {
-        std::cerr << "GLFW error " << error << ": " << description << std::endl;
+        LOGW("GLFW error {}: {}", error, description);
     });
 
     if (!glfwInit()) {
+        LOGE("Failed to initialize glfw");
         return false;
     }
 
@@ -362,11 +383,12 @@ bool App::initialize(const char* title, int width, int height)
 
     // Initialize OpenGL loader
     if (gl3wInit() != 0) {
-        promptError("Failed to initialize OpenGL loader!");
+        LOGE("Failed to initialize OpenGL loader");
         return false;
     }
 
     mSupportComputeShader = glfwExtensionSupported("GL_ARB_compute_shader");
+    LOGI("Support compute shader: {}", mSupportComputeShader);
 
 #ifdef _DEBUG
     // Check output frame buffer has no gamma color encoding, since we done it in our shader of image presentation.
@@ -466,7 +488,7 @@ void App::initDigitCharData(const unsigned char* data)
     stbtt_bakedchar cdata[charNumber];
     int result = stbtt_BakeFontBitmap(data, 0, fontHeight, bitmap, bitmapWidth, bitmapWidth, firstAsciiCodeIdx, charNumber, cdata);
     if (result < 0) {
-        promptError("Failed to initialized font!");
+        LOGW("Failed to initialized font!");
     }
 
     // Push data for digit 0-9 whose ASCII code is [48, 57]
@@ -1067,7 +1089,7 @@ void    App::initToolbar()
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, Vec2f(5.0f));
     ImGui::PushItemWidth(comboMenuWidth);
     const char* outTransformTypes[] = { "sRGB", "P3 D65", "BT.2020" };
-    if (ImGui::BeginCombo("##OutputColorSpace", outTransformTypes[mOutTransformType])) // The second parameter is the label previewed before opening the combo.
+    if (ImGui::BeginCombo("##OutputColorSpace", outTransformTypes[mOutTransformType]))
     {
         for (int i = 0; i < IM_ARRAYSIZE(outTransformTypes); i++) {
             bool isSelected = (mOutTransformType == i);
@@ -1076,7 +1098,7 @@ void    App::initToolbar()
             }
 
             if (isSelected) {
-                ImGui::SetItemDefaultFocus();   // Set the initial focus when opening the combo (scrolling + for keyboard navigation support in the upcoming navigation branch)
+                ImGui::SetItemDefaultFocus();
             }
         }
         ImGui::EndCombo();
@@ -1101,7 +1123,7 @@ void    App::initToolbar()
 
     ImGui::SameLine();
     const char* presentModes[] = { "RGB", "R", "G", "B", "Luminance", "CIE L*", "CIE a*", "CIE b*" };
-    if (ImGui::BeginCombo("##Channel", presentModes[mCurrentPresentMode])) // The second parameter is the label previewed before opening the combo.
+    if (ImGui::BeginCombo("##Channel", presentModes[mCurrentPresentMode]))
     {
         for (int i = 0; i < IM_ARRAYSIZE(presentModes); i++) {
             bool isSelected = (mCurrentPresentMode == i);
@@ -1110,7 +1132,7 @@ void    App::initToolbar()
             }
 
             if (isSelected) {
-                ImGui::SetItemDefaultFocus();   // Set the initial focus when opening the combo (scrolling + for keyboard navigation support in the upcoming navigation branch)
+                ImGui::SetItemDefaultFocus();
             }
         }
         ImGui::EndCombo();
@@ -1932,7 +1954,7 @@ void    App::importImageFiles(const std::vector<std::string>& filepathArray,
         std::replace(path.begin(), path.end(), '\\', '/');
 
         if (!Texture::isSupported(path)) {
-            promptWarning(fmt::format("Unsupported image type for \"{}\"", path));
+            LOGW("Unsupported image type for \"{}\"", path);
             continue;
         }
         
@@ -1951,6 +1973,10 @@ void    App::importImageFiles(const std::vector<std::string>& filepathArray,
             if (insertIdx <= mCmpImageIndex) {
                 ++mCmpImageIndex;
             }
+
+            LOGI("Reimport {} to layer {}", path, insertIdx);
+        } else {
+            LOGI("Import {}", path);
         }
 
         auto& newTexture = mTexturePool.acquireTexture(path);
@@ -2128,7 +2154,7 @@ void    App::openSession(const std::string& filepath)
 {
     fx::gltf::Document sessionFile = fx::gltf::LoadFromText(filepath);
     if ("baktsiu" != sessionFile.asset.generator) {
-        promptError("Input is not a valid Bak-Tsiu session file");
+        LOGW("Input is not a valid Bak-Tsiu session file");
         return;
     }
 

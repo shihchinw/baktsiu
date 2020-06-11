@@ -35,7 +35,7 @@ GLuint createShader(GLint type, const std::string& name, const std::string& cont
         char buffer[512];
         glGetShaderInfoLog(id, 512, nullptr, buffer);
         std::string msg = fmt::format("Error while compiling {} shader \"{}\":\n{}", shaderType, name, buffer);
-        baktsiu::promptError(msg);
+        LOGW(msg);
         throw std::runtime_error(msg);
     }
 
@@ -71,7 +71,7 @@ bool Shader::init(const std::string& name,
     if (status != GL_TRUE) {
         char buffer[512];
         glGetProgramInfoLog(mProgram, 512, nullptr, buffer);
-        promptError(fmt::format("Linker error in \"{}\":\n{}", mName, buffer));
+        LOGE("Linker error in \"{}\":\n{}", mName, buffer);
         mProgram= 0;
         throw std::runtime_error("Shader linking failed!");
     }
@@ -121,7 +121,7 @@ bool Shader::initCompute(const std::string& name, const std::string& compShaderC
     if (status != GL_TRUE) {
         char buffer[512];
         glGetProgramInfoLog(mProgram, 512, nullptr, buffer);
-        promptError(fmt::format("Linker error in \"{}\":\n{}", mName, buffer));
+        LOGE("Linker error in \"{}\":\n{}", mName, buffer);
         mProgram = 0;
         throw std::runtime_error("Shader linking failed!");
     }
@@ -149,7 +149,7 @@ GLint Shader::uniform(const std::string& name) const {
     GLint id = glGetUniformLocation(mProgram, name.c_str());
     
     if (id == -1) {
-        promptWarning(fmt::format("Can not find uniform: {}", name));
+        LOGW("Can not find uniform: {}", name);
     }
     
     return id;

@@ -120,6 +120,8 @@ public:
 private:
     void    setThemeColors();
 
+    void    initLogger();
+
     // Initialize related bitmap and uv info for text.
     void    initDigitCharData(const unsigned char* data);
 

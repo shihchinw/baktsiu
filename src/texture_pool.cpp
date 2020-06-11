@@ -116,7 +116,7 @@ void    TexturePool::processImportTasks()
         ScopeMarker((std::string("Load texture") + imagePath).c_str());
         auto& newTexture = std::get<1>(loadRequest);
         if (!newTexture->loadFromFile(imagePath)) {
-            promptError("Failed to load texture " + imagePath);
+            LOGE("Failed to load texture {}", imagePath);
             continue;
         }
 
