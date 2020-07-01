@@ -1329,6 +1329,8 @@ void App::initImagePropWindow()
     const int maxFilenameLength = bufSize - 10; // Reserve 10 chars for icon and spaces
     char buf[bufSize];
     const int imageNum = static_cast<int>(mImageList.size());
+    const float imageListWindowHeight = ImGui::GetWindowHeight() - g.Style.ItemInnerSpacing.y * 2.0f;
+    const float imageItemHeight = 24.0f;
     const bool enableCompareView = inCompareMode();
 
     static const Vec4f activeBorderColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -1347,7 +1349,7 @@ void App::initImagePropWindow()
             snprintf(buf, bufSize, "           %s##%p", filename.c_str(), addr);
         }
 
-        if (ImGui::Selectable(buf, mTopImageIndex == i && !isDraggingImageItem, 0, Vec2f(propWindowWidth, 24.0f))) {
+        if (ImGui::Selectable(buf, mTopImageIndex == i && !isDraggingImageItem, 0, Vec2f(propWindowWidth, imageItemHeight))) {
             if (isDraggingImageItem) {
                 isDraggingImageItem = false;
                 if (moveAction) {
@@ -1425,7 +1427,10 @@ void App::initImagePropWindow()
         }
 
         if ((i == mCmpImageIndex || i == mTopImageIndex) && enableCompareView) {
-            ImGui::SameLine(propWindowWidth - g.FontSize - g.Style.ItemSpacing.x * 2.0f);
+            bool hasScrollBar = imageListWindowHeight < (imageNum * (imageItemHeight + g.Style.ItemSpacing.y) + g.Style.ItemSpacing.y);
+            float scrollBarSpace = hasScrollBar ? g.Style.ScrollbarSize : 0.0f;
+            
+            ImGui::SameLine(propWindowWidth - g.FontSize - g.Style.ItemSpacing.x * 2.0f - scrollBarSpace);
             ImGui::AlignTextToFramePadding();
             ImGui::Text(i == mCmpImageIndex ? ICON_FA_ANGLE_RIGHT : ICON_FA_ANGLE_LEFT);
         }
