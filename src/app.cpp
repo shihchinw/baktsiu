@@ -1987,12 +1987,12 @@ void    App::importImageFiles(const std::vector<std::string>& filepathArray,
 
         auto newTexture = mTexturePool.acquireTexture(path);
         auto newImage = std::make_unique<Image>(newTexture, id);
-        mImageList.insert(mImageList.begin() + insertIdx, std::move(newImage));
-
         const ImageType imageType = Texture::getImageType(path);
         if (imageType == ImageType::HDR || imageType == ImageType::OPENEXR) {
             newImage->setColorEncodingType(ColorEncodingType::Linear);
         }
+        
+        mImageList.insert(mImageList.begin() + insertIdx, std::move(newImage));
 
         action.filepathArray.push_back(path);
         action.imageIdxArray.push_back(Action::composeImageIndex(id, insertIdx));
