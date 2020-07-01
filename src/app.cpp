@@ -1985,8 +1985,8 @@ void    App::importImageFiles(const std::vector<std::string>& filepathArray,
             LOGI("Import {}", path);
         }
 
-        auto& newTexture = mTexturePool.acquireTexture(path);
-        auto& newImage = std::make_unique<Image>(newTexture, id);
+        auto newTexture = mTexturePool.acquireTexture(path);
+        auto newImage = std::make_unique<Image>(newTexture, id);
         mImageList.insert(mImageList.begin() + insertIdx, std::move(newImage));
 
         const ImageType imageType = Texture::getImageType(path);
