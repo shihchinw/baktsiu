@@ -188,8 +188,9 @@ void PlotMultiHistograms(
     const ImRect inner_bb(frame_bb.Min + style.FramePadding, frame_bb.Max - style.FramePadding);
     const ImRect total_bb(frame_bb.Min, frame_bb.Max + ImVec2(label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f, 0));
     ItemSize(total_bb, style.FramePadding.y);
-    if (!ItemAdd(total_bb, NULL))
+    if (!ItemAdd(total_bb, 0)) {
         return;
+    }
 
     RenderFrame(inner_bb.Min, inner_bb.Max, GetColorU32(ImGuiCol_FrameBg), true, 1.0f);
 
@@ -1432,7 +1433,7 @@ void App::initImagePropWindow()
             
             ImGui::SameLine(propWindowWidth - g.FontSize - g.Style.ItemSpacing.x * 2.0f - scrollBarSpace);
             ImGui::AlignTextToFramePadding();
-            ImGui::Text(i == mCmpImageIndex ? ICON_FA_ANGLE_RIGHT : ICON_FA_ANGLE_LEFT);
+            ImGui::TextUnformatted(i == mCmpImageIndex ? ICON_FA_ANGLE_RIGHT : ICON_FA_ANGLE_LEFT);
         }
     }
     ImGui::PopStyleVar(1);
@@ -1531,7 +1532,7 @@ void App::initFooter()
     if (topImage && !inCompareMode()) {
         const std::string& filename = topImage->filename();
         ImGui::SameLine(g.IO.DisplaySize.x - ImGui::CalcTextSize(filename.c_str()).x - g.Style.FramePadding.x);
-        ImGui::Text(filename.c_str());
+        ImGui::TextUnformatted(filename.c_str());
     }
 
     ImGui::End();
@@ -1569,7 +1570,7 @@ void    App::showImageProperties()
         ColorPrimaryType::ACES_AP1,
     };
 
-    ImGui::Text(getPropertyLabel(topImage->getColorPrimaryType()));
+    ImGui::TextUnformatted(getPropertyLabel(topImage->getColorPrimaryType()));
     if (ImGui::BeginPopupContextItem("ColorPrimaryMenu")) {
         for (auto type : colorPrimaryTypes) {
             const char* label = getPropertyLabel(type);
@@ -1589,7 +1590,7 @@ void    App::showImageProperties()
         ColorEncodingType::sRGB
     };
 
-    ImGui::Text(getPropertyLabel(topImage->getColorEncodingType()));
+    ImGui::TextUnformatted(getPropertyLabel(topImage->getColorEncodingType()));
     if (ImGui::BeginPopupContextItem("ColorEncodingMenu")) {
         for (auto type : colorEncodingTypes) {
             const char* label = getPropertyLabel(type);
@@ -1600,9 +1601,9 @@ void    App::showImageProperties()
         ImGui::EndPopup();
     }
 
-    ImGui::Text(topImage->filepath().c_str());
+    ImGui::TextUnformatted(topImage->filepath().c_str());
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip(topImage->filepath().c_str());
+        ImGui::SetTooltip("%s", topImage->filepath().c_str());
     }
 
 
@@ -1765,7 +1766,7 @@ void    App::showImageNameOverlays()
     ImGui::SetNextWindowBgAlpha(0.5f);
     const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
     if (ImGui::Begin("##ImageOverlay1", nullptr, windowFlags)) {
-        ImGui::Text(mImageList[mTopImageIndex]->filename().c_str());
+        ImGui::TextUnformatted(mImageList[mTopImageIndex]->filename().c_str());
     }
     ImGui::End();
 
@@ -1780,7 +1781,7 @@ void    App::showImageNameOverlays()
     ImGui::SetNextWindowPos(windowPos, ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.5f);
     if (ImGui::Begin("##ImageOverlay2", nullptr, windowFlags)) {
-        ImGui::Text(cmpImageName.c_str());
+        ImGui::TextUnformatted(cmpImageName.c_str());
     }
     ImGui::End();
 }
@@ -1996,7 +1997,7 @@ void    App::importImageFiles(const std::vector<std::string>& filepathArray,
         if (imageType == ImageType::HDR || imageType == ImageType::OPENEXR) {
             newImage->setColorEncodingType(ColorEncodingType::Linear);
         }
-        
+
         mImageList.insert(mImageList.begin() + insertIdx, std::move(newImage));
 
         action.filepathArray.push_back(path);
