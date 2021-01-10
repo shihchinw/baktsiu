@@ -22,8 +22,9 @@ uniform int     uPixelMarkerFlags;
 uniform int     uSideBySide;
 uniform vec4    uCharUvRanges[11];
 uniform vec4    uCharUvXforms[11];
-uniform bool    uEnablePixelHighlight;
 uniform bool    uApplyToneMapping;
+uniform bool    uBlendWithImageAlpha;
+uniform bool    uEnablePixelHighlight;
 
 in  vec2 vUV;
 out vec4 oColor;
@@ -475,13 +476,14 @@ vec3 drawRGBValues(vec2 wh, vec2 offset, float imageScale, vec3 linearColor, vec
 //! @param image2 Texture sampler of right image.
 //! @param uvOffset The relative UV offset for image2.
 vec4 showImage(vec2 wh, vec2 offset, vec2 imageSize, vec2 cursorPos,
-    in sampler2D image1, in sampler2D image2, vec2 uvOffset)
+    in sampler2D image1, in sampler2D image2, vec2 uvOffset, vec3 bgColor)
 {
-    vec4 result = vec4(0.0);
+    vec4 result = vec4(0.0, 0.0, 0.0, 1.0);
 
     // Add one extra pixel to draw the top and right pixel border.
     vec2 regionMask = step(offset, wh) - step(offset + imageSize + 1, wh);
     if (regionMask.x * regionMask.y == 0.0) {
+        result.rgb = bgColor;
         return result;
     }
    
@@ -512,6 +514,7 @@ vec4 showImage(vec2 wh, vec2 offset, vec2 imageSize, vec2 cursorPos,
     result = overlayPixelMarker(result, uPixelMarkerFlags);
     result.rgb = drawRGBValues(wh, offset, uImageScale, linearColor, result.rgb);
     result.rgb = outputTransform(result.rgb, uOutTransformType, mix(uDisplayGamma, 1.0, enableHeatMap));
+    result.rgb = mix(result.rgb, bgColor, vec3((1.0 - result.a) * int(uBlendWithImageAlpha)));
     result.rgb = mix(result.rgb, vec3(0.7), vec3(showPixelBorder(wh, offset, uImageScale)));
     result.rgb = mix(result.rgb, uPixelBorderHighlightColor, vec3(showPixelBorderHighlight(wh, cursorPos, offset, uImageScale)));
 
@@ -539,21 +542,15 @@ vec4 renderSideBySide(vec2 wh, vec4 offset, vec2 relativeOffset, vec2 cursorPos,
         rightCursorPos = round(ij * uImageScale + offset.zw);
     }
 
+    vec3 bgColor = getCheckerColor(uv, uWindowSize);
+
     vec2 deltaUV = round(relativeOffset) / imageSize;
-    vec4 color1 = showImage(wh, offset.xy, imageSize, leftCursorPos, uImage1, uImage2, -deltaUV);
+    vec4 color1 = showImage(wh, offset.xy, imageSize, leftCursorPos, uImage1, uImage2, -deltaUV, bgColor);
 
     wh.x = round(wh.x - splitPos * uWindowSize.x + 0.5) - 0.5;
-    vec4 color2 = showImage(wh, offset.zw, imageSize, rightCursorPos, uImage2, uImage1, deltaUV);
+    vec4 color2 = showImage(wh, offset.zw, imageSize, rightCursorPos, uImage2, uImage1, deltaUV, bgColor);
 
-    vec4 result = mix(color1, color2, vec4(uv.x > splitPos));
-
-    if (result.a == 0.0) {
-        // Draw background checker.
-        result.rgb = getCheckerColor(uv, uWindowSize);
-        result.a = 1.0;
-    }
-
-    return result;
+    return mix(color1, color2, vec4(uv.x > splitPos));
 }
 
 void main()
@@ -595,6 +592,7 @@ void main()
         float squareError = getColorDistance(color1.rgb, color2.rgb);
         oColor.rgb = mix(oColor.rgb, vec3(1.0, 0.0, 1.0), clamp(squareError, 0.0, 1.0));
         oColor.rgb = mix(oColor.rgb, getHeatColor(squareError), vec3(enableHeatMap));
+        oColor.a = 1.0;
     } else {
         color1.rgb = colorTransform(color1.rgb, uPresentMode);
         color2.rgb = colorTransform(color2.rgb, uPresentMode);
@@ -608,6 +606,7 @@ void main()
     }
 
     oColor.rgb = outputTransform(oColor.rgb, uOutTransformType, mix(uDisplayGamma, 1.0, enableHeatMap));
+    oColor.rgb = mix(oColor.rgb, getCheckerColor(vUV, uWindowSize), vec3((1.0 - oColor.a) * int(uBlendWithImageAlpha)));
     oColor.rgb = mix(oColor.rgb, vec3(0.7), vec3(showPixelBorder(wh, uOffset, uImageScale)));
     oColor.rgb = mix(oColor.rgb, uPixelBorderHighlightColor, vec3(showPixelBorderHighlight(wh, uCursorPos, uOffset, uImageScale)));
     

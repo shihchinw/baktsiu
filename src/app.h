@@ -45,17 +45,17 @@ struct Action
         Move,
     };
 
-    Action() 
+    Action()
     {
         reset();
     }
 
-    Action(Type t, int topImageIdx, int cmpImageIdx) 
+    Action(Type t, int topImageIdx, int cmpImageIdx)
         : type(t), prevTopImageIdx(topImageIdx), prevCmpImageIdx(cmpImageIdx)
     {
     }
 
-    void reset() 
+    void reset()
     {
         type = Type::Unknown;
         filepathArray.clear();
@@ -97,7 +97,7 @@ ENUM_CLASS_OPERATORS(PixelMarkerFlags);
 
 // The class of viewer functionalities.
 //
-// It contains two display layers on viewport. Top image is the one selected in 
+// It contains two display layers on viewport. Top image is the one selected in
 // image property window at right hand side. In compare mode, we could move the
 // splitter to swipe top image.
 class App
@@ -110,7 +110,7 @@ public:
 public:
     bool    initialize(const char* title, int width, int height);
 
-    void    importImageFiles(const std::vector<std::string>& filepathArray, 
+    void    importImageFiles(const std::vector<std::string>& filepathArray,
                 bool recordAction, std::vector<uint16_t>* imageIdxArray = nullptr);
 
     void    run(CompositeFlags initFlags = CompositeFlags::Top);
@@ -171,7 +171,7 @@ private:
 
     // Synchronize local offset of column views.
     void    syncSideBySideView(const ImGuiIO& io);
-    
+
     // Return pixel coordinates from mouse position.
     bool    getImageCoordinates(Vec2f viewportCoords, Vec2f& outImageCoords) const;
 
@@ -224,7 +224,7 @@ private:
     ImFont*         mSmallFont = nullptr;
     ImFont*         mSmallIconFont = nullptr;
     GLuint          mFontTexture = 0;
-    
+
     std::vector<Vec4f> mCharUvRanges;   // UV bbox of each digit in font texture.
     std::vector<Vec4f> mCharUvXforms;   // UV offset of each digit in font texture.
 
@@ -236,7 +236,7 @@ private:
     Shader          mStatisticsShader;
     GLuint          mTexHistogram;
     Sampler         mPointSampler;
-    
+
     std::array<int, 768> mHistogram;
 
     CompositeFlags      mCompositeFlags = CompositeFlags::Top;
@@ -274,6 +274,7 @@ private:
     bool        mShowImagePropWindow = false;
     bool        mPopupImagePropWindow = false;
     bool        mUseLinearFilter = true;
+    bool        mBlendWithImageAlpha = true;
     bool        mShowImageNameOverlay = true;
     bool        mShowPixelMarker = false;
     bool        mSupportComputeShader = false;

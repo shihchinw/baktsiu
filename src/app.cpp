@@ -102,7 +102,7 @@ bool ToggleButton(const char* label, bool* value, const ImVec2 &size = ImVec2(0,
 
     if (*value) {
         ImGui::PushStyleColor(ImGuiCol_Button, g.Style.Colors[ImGuiCol_ButtonActive]);
-        
+
         if (ImGui::Button(label, size)) {
             *value ^= true;
             valueChanged = true;
@@ -143,7 +143,7 @@ bool Splitter(bool split_vertically, float thickness, float* size1, float* size2
 
 }  // namespace anonymous
 
-namespace ImGui 
+namespace ImGui
 {
 
 static ImU32 InvertColorU32(ImU32 in)
@@ -213,7 +213,7 @@ void PlotMultiHistograms(
             const int v0 = pixel_counts[dataIdx * values_count + idx0];
             TextColored(ImColor(255, 255, 255, 255), "%s: %d", names[dataIdx], v0);
         }
-        
+
         ImGui::EndTooltip();
         v_hovered = v_idx;
     }
@@ -275,7 +275,7 @@ inline Vec4f getCharUvXform(const stbtt_bakedchar& ch, float charHeight)
     xform.y = (ch.y1 - ch.y0) / charHeight;
     xform.z = ch.xoff / ch.xadvance;
 
-    // The bitmap is baked upside down. For each char, the yoff is the value from 
+    // The bitmap is baked upside down. For each char, the yoff is the value from
     // image bottom to the baseline pixel. Ex. if yoff is -7, means the baseline
     // is at +7 pixels in y-axis. To compute the offset uv coordinates within
     // that char only, we calculate the pixels number from char bottom to baseline
@@ -303,7 +303,7 @@ void    App::setThemeColors()
     colors[ImGuiCol_Header] = ImVec4(0.0f, 0.439f, 0.702f, 0.5f);
     colors[ImGuiCol_HeaderActive] = colors[ImGuiCol_ButtonActive];
     colors[ImGuiCol_HeaderHovered] = colors[ImGuiCol_ButtonHovered];
-    
+
     colors[ImGuiCol_TabActive] = colors[ImGuiCol_ButtonActive];
     colors[ImGuiCol_TabHovered] = colors[ImGuiCol_ButtonHovered];
 
@@ -429,7 +429,7 @@ bool App::initialize(const char* title, int width, int height)
     mColumnViews[1].setViewportPadding(padding);
 
     // Fonts are converted into data arrays in pre-built stage. It uses bin2c.cmake to convert
-    // resources/fonts/*.ttf into corresponding data arrays. Here we simply add fonts from 
+    // resources/fonts/*.ttf into corresponding data arrays. Here we simply add fonts from
     // memory. But in order to keep ownership of font data, we need to set FontDataOwnedByAtlas
     // to false, otherwise ImGui would release font data and cause crash when closing app window.
     // https://github.com/ocornut/imgui/issues/220
@@ -443,7 +443,7 @@ bool App::initialize(const char* title, int width, int height)
     config.GlyphMinAdvanceX = 16.0f; // Use if you want to make the icon monospaced
     static const ImWchar icon_ranges[] = { ICON_MIN_FA, ICON_MAX_FA, 0 };
     io.Fonts->AddFontFromMemoryTTF(fa_solid_900_ttf, fa_solid_900_ttf_size, config.GlyphMinAdvanceX, &config, icon_ranges);
-    
+
     // Create another font with small icons.
     config.MergeMode = false;
     config.GlyphMinAdvanceX = 0.0f;
@@ -537,7 +537,7 @@ void App::processTextureUploadTasks()
     TextureList newTextureList = mTexturePool.upload();
 
     bool isUndo = (mCurAction.type != Action::Type::Unknown);
-    
+
     if (isUndo && mTexturePool.hasNoPendingTasks()) {
         if (mCurAction.type == Action::Type::Remove) {
             const int curImageNum = static_cast<int>(mImageList.size());
@@ -545,7 +545,7 @@ void App::processTextureUploadTasks()
             mCmpImageIndex = std::min(mCurAction.prevCmpImageIdx, curImageNum - 1);
             mUpdateImageSelection = false;
         }
-        
+
         mCurAction.reset();
     }
 
@@ -591,7 +591,7 @@ void App::run(CompositeFlags initFlags)
         initToolbar();
         initFooter();
         initImagePropWindow();
-        
+
         ImGuiIO& io = ImGui::GetIO();
 
         if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow) &&
@@ -626,7 +626,7 @@ void App::run(CompositeFlags initFlags)
             Vec2f heatbarPos(8.0f, io.DisplaySize.y - mFooterHeight - 8.0f - 20.0f);
             showHeatRangeOverlay(heatbarPos, 150.0f);
         }
-        
+
         // Since GLFW doesn't support cursor of resize all, thus we use imgui to draw that cursor.
         // Caution: the cursor is hidden when using imgui's drawn cursor, when the root window is unfocused.
         io.MouseDrawCursor = (ImGui::GetMouseCursor() == ImGuiMouseCursor_ResizeAll);
@@ -691,6 +691,7 @@ void App::run(CompositeFlags initFlags)
         mPresentShader.setUniform("uSplitPos", enableCompareView ? mViewSplitPos : 1.0f);
         mPresentShader.setUniform("uDisplayGamma", mDisplayGamma);
         mPresentShader.setUniform("uApplyToneMapping", mEnableToneMapping);
+        mPresentShader.setUniform("uBlendWithImageAlpha", mBlendWithImageAlpha);
         mPresentShader.setUniform("uCharUvRanges", mCharUvRanges);
         mPresentShader.setUniform("uCharUvXforms", mCharUvXforms);
         mPresentShader.setUniform("uPixelBorderHighlightColor", mPixelBorderHighlightColor);
@@ -852,7 +853,7 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
 
     bool onFocus = !ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow);
     float oldImageScale = mImageScale;
-    
+
     static bool isInSniperMode = false;
 
     if (isInSniperMode && ImGui::IsKeyReleased(0x5A)) {
@@ -880,7 +881,7 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
             } else if (io.KeyAlt) {
                 static Vec2f residualTranslate = Vec2f(0.0f);
                 translate += residualTranslate;
-                
+
                 Vec2f roundedTranslate = glm::round(translate / mImageScale);
                 int columnIdx = static_cast<int>(io.MousePos.x > io.DisplaySize.x * mViewSplitPos);
                 mColumnViews[columnIdx].translate(roundedTranslate, true);
@@ -935,7 +936,7 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
         mImageScale *= 0.5f;
     } else if (ImGui::IsKeyPressed(0x14E) || ImGui::IsKeyPressed(0x3D)) {
         mImageScale *= 2.0f;
-    } 
+    }
     else if (!io.KeyCtrl && ImGui::IsKeyPressed(0x5A) && mPrevImageScale < 0.0f) {
         isInSniperMode = true;
         scalePivot = fetchScalePivot(io, useColumnView, mViewSplitPos, mouseAtRightColumn);
@@ -1168,7 +1169,7 @@ void    App::initToolbar()
         }
 
         const bool showDiffMarker = hasAnyFlags(mPixelMarkerFlags, PixelMarkerFlags::DiffMask);
-        
+
         itemValue = hasAllFlags(mPixelMarkerFlags, PixelMarkerFlags::Overflow);
         if (ImGui::MenuItem("Overflow", "", &itemValue, !enableCompareView || !showDiffMarker)) {
             mPixelMarkerFlags = toggleFlags(mPixelMarkerFlags, PixelMarkerFlags::Overflow);
@@ -1186,6 +1187,10 @@ void    App::initToolbar()
     centeredToolItemWidth = g.CurrentWindow->DC.CursorPos.x - centeredToolBeginPos;
 
     // Show buttons at right hand side.
+    ImGui::SameLine(g.IO.DisplaySize.x - (buttonSize.x + g.Style.ItemSpacing.x) * 3.0f);
+    ToggleButton(ICON_FA_ADJUST, &mBlendWithImageAlpha, buttonSize);
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Enable Transparency"); }
+
     ImGui::SameLine(g.IO.DisplaySize.x - (buttonSize.x + g.Style.ItemSpacing.x) * 2.0f);
     ToggleButton(ICON_FA_COMMENT_ALT, &mShowImageNameOverlay, buttonSize);
     if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Image Name Tags"); }
@@ -1274,7 +1279,7 @@ void App::initImagePropWindow()
     ImGui::BeginChild("ScrollingRegion1", ImVec2(propWindowWidth - g.Style.WindowPadding.x, size1));
 
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
-    
+
     auto* topImage = getTopImage();
     if (ImGui::CollapsingHeader("Histogram") && topImage && mSupportComputeShader) {
         ScopeMarker("Draw Histogram");
@@ -1430,7 +1435,7 @@ void App::initImagePropWindow()
         if ((i == mCmpImageIndex || i == mTopImageIndex) && enableCompareView) {
             bool hasScrollBar = imageListWindowHeight < (imageNum * (imageItemHeight + g.Style.ItemSpacing.y) + g.Style.ItemSpacing.y);
             float scrollBarSpace = hasScrollBar ? g.Style.ScrollbarSize : 0.0f;
-            
+
             ImGui::SameLine(propWindowWidth - g.FontSize - g.Style.ItemSpacing.x * 2.0f - scrollBarSpace);
             ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted(i == mCmpImageIndex ? ICON_FA_ANGLE_RIGHT : ICON_FA_ANGLE_LEFT);
@@ -1616,7 +1621,7 @@ void    App::showImageProperties()
 void    App::initHomeWindow(const char* name)
 {
     bool open = true;
-    
+
     ImGui::SetNextWindowContentWidth(500.0f);
     if (ImGui::BeginPopupModal(name, &open, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
         //ImGui::Dummy(Vec2f(550.0f, ImGui::GetFrameHeight()));
@@ -1695,7 +1700,7 @@ void    App::initHomeWindow(const char* name)
         }
 
         ImGui::Dummy(Vec2f(ImGui::GetFrameHeight()));
-        
+
         if (ImGui::BeginTabBar("AboutBar", ImGuiTabBarFlags_None)) {
             if (ImGui::BeginTabItem("About")) {
                 ImGui::TextWrapped("Bak-Tsiu %s, an image viewer designed for comparing images and examining pixel differences.", VERSION);
@@ -1736,13 +1741,13 @@ bool    App::showRemoveImageDlg(const char* title)
 bool    App::showClearImagesDlg(const char* title)
 {
     bool result = false;
-    
+
     ImGui::SetNextWindowSizeConstraints(Vec2f(300.0f, 80.0f), Vec2f(300.0f, 120.0f));
     if (ImGui::BeginPopupModal(title, NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Close all images?\n");
         ImGui::Dummy(Vec2f(0.0f, ImGui::GetCurrentContext()->FontSize));
         ImGui::Separator();
-        
+
         auto& style = ImGui::GetStyle();
         float buttonWidth = (ImGui::GetWindowWidth() - style.ItemSpacing.x) * 0.5f - style.FramePadding.x * 2.0f;
         if (ImGui::Button("OK", ImVec2(buttonWidth, 0))) { ImGui::CloseCurrentPopup(); result = true; }
@@ -1790,8 +1795,8 @@ void App::showHeatRangeOverlay(const Vec2f& pos, float width)
 {
     ImGuiContext& g = *ImGui::GetCurrentContext();
 
-    const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration 
-        | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings 
+    const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration
+        | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings
         | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
 
     Vec2f barSize(width, 12.0f);
@@ -1822,8 +1827,8 @@ void App::showHeatRangeOverlay(const Vec2f& pos, float width)
             const auto& startHue = hues[i];
             const auto& endHue = hues[i + 1];
             drawList->AddRectFilledMultiColor(
-                Vec2f(barSize.x * i / 16.0, 0.0f) + rampBarPadding, 
-                Vec2f(barSize.x * (i + 1) / 16.0, barSize.y) + rampBarPadding, 
+                Vec2f(barSize.x * i / 16.0, 0.0f) + rampBarPadding,
+                Vec2f(barSize.x * (i + 1) / 16.0, barSize.y) + rampBarPadding,
                 startHue, endHue, endHue, startHue);
         }
 
@@ -1950,7 +1955,7 @@ void    App::showExportSessionDlg()
 }
 
 // This function is executed in main thread.
-void    App::importImageFiles(const std::vector<std::string>& filepathArray, 
+void    App::importImageFiles(const std::vector<std::string>& filepathArray,
                               bool recordAction, std::vector<uint16_t>* imageIdxArray)
 {
     const size_t imageNum = filepathArray.size();
@@ -1969,7 +1974,7 @@ void    App::importImageFiles(const std::vector<std::string>& filepathArray,
             LOGW("Unsupported image type for \"{}\"", path);
             continue;
         }
-        
+
         uint8_t insertIdx = static_cast<uint8_t>(mImageList.size());
         uint8_t id = 0;
 
@@ -2004,7 +2009,7 @@ void    App::importImageFiles(const std::vector<std::string>& filepathArray,
         action.imageIdxArray.push_back(Action::composeImageIndex(id, insertIdx));
         mUpdateImageSelection = true;
     }
-    
+
     if (recordAction) {
         appendAction(std::move(action));
     }
@@ -2029,13 +2034,13 @@ void    App::removeTopImage(bool recordAction)
 
     image.reset();
     mTexturePool.cleanUnusedTextures();
-    
+
     const int imageNum = static_cast<int>(mImageList.size());
     if (imageNum < 2) {
         mCmpImageIndex = -1;
         mCompositeFlags = CompositeFlags::Top;
     }
-    
+
     if (imageNum == 0) {
         mTopImageIndex = -1;
     } else {
@@ -2172,7 +2177,7 @@ void    App::openSession(const std::string& filepath)
 
     std::vector<std::string> filepathArray;
     filepathArray.reserve(sessionFile.images.size());
-    
+
     for (auto &imageProp : sessionFile.images) {
         filepathArray.push_back(imageProp.uri);
     }
