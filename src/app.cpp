@@ -1118,7 +1118,7 @@ void    App::initToolbar()
 
     ImGui::SameLine();
     ImGui::SetNextItemWidth(80.0f);
-    ImGui::SliderFloat("##Gamma", &mDisplayGamma, 1.0f, 2.8f, "gamma: %.1f");
+    ImGui::SliderFloat("##Gamma", &mDisplayGamma, 0.35f, 2.8f, "gamma: %.2f");
     if (ImGui::IsItemClicked(1)) {
         mDisplayGamma = 2.2f;
     }
