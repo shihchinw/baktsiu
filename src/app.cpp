@@ -1589,8 +1589,8 @@ void    App::showImageProperties()
     ImGui::Separator();
     ImGui::Text("Color Primaries");
     ImGui::Text("Color Encoding");
-    ImGui::Text("Location");
     ImGui::Text("Resolution");
+    ImGui::Text("Location");
     //ImGui::Text("Bit Depth");
     ImGui::NextColumn();
 
@@ -1601,15 +1601,25 @@ void    App::showImageProperties()
         ColorPrimaryType::ACES_AP1,
     };
 
-    ImGui::TextUnformatted(getPropertyLabel(topImage->getColorPrimaryType()));
-    if (ImGui::BeginPopupContextItem("ColorPrimaryMenu")) {
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 2.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, Vec2f(4.0f, 0.0f));
+    ImGui::PushItemWidth(-1);
+  
+    const char* colorPrimaryLabel = getPropertyLabel(topImage->getColorPrimaryType());
+    if (ImGui::BeginCombo("##ColorPrimaryMenu", colorPrimaryLabel)) {
         for (auto type : colorPrimaryTypes) {
             const char* label = getPropertyLabel(type);
-            if (ImGui::Selectable(label)) {
+            bool isSelected = (type == topImage->getColorPrimaryType());
+
+            if (ImGui::Selectable(label, isSelected)) {
                 topImage->setColorPrimaryType(type);
             }
+
+            if (isSelected) {
+                ImGui::SetItemDefaultFocus();
+            }
         }
-        ImGui::EndPopup();
+        ImGui::EndCombo();
     }
 
     static const ColorEncodingType colorEncodingTypes[] = {
@@ -1621,26 +1631,31 @@ void    App::showImageProperties()
         ColorEncodingType::sRGB
     };
 
-    ImGui::TextUnformatted(getPropertyLabel(topImage->getColorEncodingType()));
-    if (ImGui::BeginPopupContextItem("ColorEncodingMenu")) {
+    const char* imageEncodingLabel = getPropertyLabel(topImage->getColorEncodingType());
+    if (ImGui::BeginCombo("##ColorEncodingMenu", imageEncodingLabel)) {
         for (auto type : colorEncodingTypes) {
             const char* label = getPropertyLabel(type);
-            if (ImGui::Selectable(label)) {
+
+            bool isSelected = (type == topImage->getColorEncodingType());
+            if (ImGui::Selectable(label, isSelected)) {
                 topImage->setColorEncodingType(type);
             }
+
+            if (isSelected) {
+                ImGui::SetItemDefaultFocus();
+            }
         }
-        ImGui::EndPopup();
+        ImGui::EndCombo();
     }
 
-    ImGui::TextUnformatted(topImage->filepath().c_str());
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("%s", topImage->filepath().c_str());
-    }
-
+    ImGui::PopItemWidth();
+    ImGui::PopStyleVar(2);
 
     auto imageSize = topImage->size();
     ImGui::Text("%.0fx%.0f", imageSize.x, imageSize.y);
     //ImGui::Text("8 bit");
+
+    ImGui::TextWrapped(topImage->filepath().c_str());
     ImGui::NextColumn();
 }
 
