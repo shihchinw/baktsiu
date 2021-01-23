@@ -107,6 +107,7 @@ public:
     static const char* kImageRemoveDlgTitle;
     static const char* kClearImagesDlgTitle;
     static const char* kSystemErrorDlgTitle;
+    static const float kSniperImageScale;
 
 public:
     bool    initialize(const char* title, int width, int height);

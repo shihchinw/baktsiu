@@ -262,6 +262,7 @@ const char* App::kImagePropWindowName = "ImagePropWindow";
 const char* App::kImageRemoveDlgTitle = "Bak Tsiu##RemoveImage";
 const char* App::kClearImagesDlgTitle = "Bak Tsiu##ClearImageLayers";
 const char* App::kSystemErrorDlgTitle = "Error##SystemError";
+const float App::kSniperImageScale = 72.0f;
 
 // Return UV BBox of given character in font texture.
 inline Vec4f getCharUvRange(const stbtt_bakedchar& ch, float mapWidth)
@@ -962,11 +963,11 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
     } else if (ImGui::IsKeyPressed(0x14E) || ImGui::IsKeyPressed(0x3D)) {
         mImageScale *= 2.0f;
     }
-    else if (!io.KeyCtrl && ImGui::IsKeyPressed(0x5A) && mPrevImageScale < 0.0f) {
+    else if (!io.KeyCtrl && ImGui::IsKeyPressed(0x5A) && mPrevImageScale < 0.0f && mImageScale < kSniperImageScale) {
         isInSniperMode = true;
         scalePivot = fetchScalePivot(io, useColumnView, mViewSplitPos, mouseAtRightColumn);
         mPrevImageScale = mImageScale;
-        mImageScale = 72.0f;
+        mImageScale = kSniperImageScale;
     }
     else if (io.KeyShift && ImGui::IsKeyPressed(0x046)) { // shift+f
         resetImageTransform(topImage->size(), true);
