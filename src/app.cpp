@@ -18,10 +18,10 @@
 
 
 #include <fstream>
+#include <iostream>
 #include <memory>
 #include <sstream>
 
-#include <fx/gltf.h>
 #include <stb_image.h>
 
 #define STB_TRUETYPE_IMPLEMENTATION
@@ -30,6 +30,7 @@
 #include "app.h"
 #include "colour.h"
 #include "resources.h"
+#include "session_generated.h"
 
 #ifdef EMBED_SHADERS
 #include "shader_resources.h"
@@ -260,6 +261,7 @@ namespace baktsiu
 const char* App::kImagePropWindowName = "ImagePropWindow";
 const char* App::kImageRemoveDlgTitle = "Bak Tsiu##RemoveImage";
 const char* App::kClearImagesDlgTitle = "Bak Tsiu##ClearImageLayers";
+const char* App::kSystemErrorDlgTitle = "Error##SystemError";
 
 // Return UV BBox of given character in font texture.
 inline Vec4f getCharUvRange(const stbtt_bakedchar& ch, float mapWidth)
@@ -283,6 +285,31 @@ inline Vec4f getCharUvXform(const stbtt_bakedchar& ch, float charHeight)
     // normalized uv coordinates.
     xform.w = (charHeight + ch.yoff) / charHeight;
     return xform;
+}
+
+
+void showErrorDialog(const char* title, const char* message)
+{
+    ImGui::SetNextWindowSizeConstraints(Vec2f(350.0f, 100.0f), Vec2f(400.0f, 250.0f));
+    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.702f, 0.0f, 0.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.980f, 0.260f, 0.260f, 0.400f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.980f, 0.260f, 0.260f, 0.400f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.812f, 0.137f, 0.137f, 0.750f));
+
+    if (ImGui::BeginPopupModal(title, NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped("%s\n", message);
+        ImGui::Dummy(Vec2f(0.0f, ImGui::GetCurrentContext()->FontSize));
+        ImGui::Separator();
+
+        auto& style = ImGui::GetStyle();
+        float buttonWidth = (ImGui::GetWindowWidth() - style.ItemSpacing.x * 2.0f);
+        if (ImGui::Button("Close", ImVec2(buttonWidth, 0))) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SetItemDefaultFocus();
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleColor(4);
 }
 
 
@@ -568,20 +595,18 @@ void App::processTextureUploadTasks()
 
 void App::run(CompositeFlags initFlags)
 {
-    bool shouldChangeComposition = true;
-
     // Spawn worker threads to handle import images.
     const unsigned int workerNum = std::thread::hardware_concurrency();
     mTexturePool.initialize(workerNum);
+
+    if (mImageList.size() > 1) {
+        mCompositeFlags = initFlags;
+    }
 
     while (!glfwWindowShouldClose(mWindow)) {
         glfwPollEvents();
 
         processTextureUploadTasks();
-        if (shouldChangeComposition && mImageList.size() >= 2) {
-            mCompositeFlags = initFlags;
-            shouldChangeComposition = false;
-        }
 
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
@@ -1202,6 +1227,7 @@ void    App::initToolbar()
     ImGui::PopStyleColor(1);
     ImGui::PopStyleVar(7);
 
+    showErrorDialog(kSystemErrorDlgTitle, mSystemErrorMsg.c_str());
     initHomeWindow(popupWindowName);
     ImGui::End();
 }
@@ -2169,34 +2195,92 @@ void    App::onFileDrop(int count, const char* filepaths[])
 
 void    App::openSession(const std::string& filepath)
 {
-    fx::gltf::Document sessionFile = fx::gltf::LoadFromText(filepath);
-    if ("baktsiu" != sessionFile.asset.generator) {
-        LOGW("Input is not a valid Bak-Tsiu session file");
+    std::ifstream infile(filepath, std::ios::binary | std::ios::in);
+
+    if (!infile.is_open()) {
+        LOGE("Failed to open file {}", filepath);
         return;
     }
 
-    std::vector<std::string> filepathArray;
-    filepathArray.reserve(sessionFile.images.size());
+    infile.seekg(0, std::ios::end);
+    size_t length = infile.tellg();
+    infile.seekg(0, std::ios::beg);
+    std::vector<char> buffer(length);
+    infile.read(buffer.data(), length);
+    infile.close();
 
-    for (auto &imageProp : sessionFile.images) {
-        filepathArray.push_back(imageProp.uri);
+    flatbuffers::Verifier verifier(reinterpret_cast<uint8_t*>(buffer.data()), length);
+    if (!io::VerifySessionBuffer(verifier)) {
+        ImGui::OpenPopup(kSystemErrorDlgTitle);
+        mSystemErrorMsg = "Invalid session format.";
+        LOGE(mSystemErrorMsg);
+        return;
     }
 
+    const io::Session* fbSession = io::GetSession(buffer.data());
+
+    std::vector<std::string> filepathArray;
+    const flatbuffers::Vector<flatbuffers::Offset<io::Image>>* fbImageList = fbSession->images();
+    for (auto* fbImage : *fbImageList) {
+        filepathArray.push_back(fbImage->path()->str());
+    }
+
+    size_t imgIndexStride = mImageList.size();
     importImageFiles(filepathArray, true);
+
+    if (0 == imgIndexStride) {
+        mUpdateImageSelection = false;
+
+        // Restore states from session when there were no top images.
+        mCompositeFlags = static_cast<CompositeFlags>(fbSession->mode());
+        mImageScale = fbSession->imageScale();
+        mViewSplitPos = fbSession->viewSplitPos();
+        mPropWindowHSplitRatio = fbSession->propWindowHSplitRatio();
+        mTopImageIndex = fbSession->topImageIndex();
+        mCmpImageIndex = fbSession->cmpImageIndex();
+        mDisplayGamma = fbSession->displayGamma();
+        mExposureValue = fbSession->exposureValue();
+    }
+
+    for (auto* fbImage : *fbImageList) {
+        mImageList[imgIndexStride]->setColorEncodingType(static_cast<ColorEncodingType>(fbImage->colorEncoding()));
+        mImageList[imgIndexStride]->setColorPrimaryType(static_cast<ColorPrimaryType>(fbImage->colorPrimary()));
+        ++imgIndexStride;
+    }
 }
 
 void    App::saveSession(const std::string& filepath)
 {
-    fx::gltf::Document sessionFile;
-    sessionFile.asset.generator = "baktsiu";
+    flatbuffers::FlatBufferBuilder builder(1024);
 
-    for (auto &image : mImageList) {
-        fx::gltf::Image imageProp;
-        imageProp.uri = image->filepath();
-        sessionFile.images.push_back(imageProp);
+    using FBImage = flatbuffers::Offset<io::Image>;
+    std::vector<FBImage> fbImageList;
+
+    for (auto& image : mImageList) {
+        FBImage fbImage = io::CreateImageDirect(builder, nullptr,
+            image->filepath().c_str(),
+            static_cast<io::ColorPrimary>(image->getColorPrimaryType()),
+            static_cast<io::ColorEncoding>(image->getColorEncodingType()));
+
+        fbImageList.push_back(fbImage);
     }
 
-    fx::gltf::Save(sessionFile, filepath, false);
+    flatbuffers::Offset<io::Session> fbSession = io::CreateSessionDirect(builder, 7777, &fbImageList,
+        static_cast<io::DisplayMode>(mCompositeFlags),
+        mTopImageIndex, mCmpImageIndex, mImageScale, mViewSplitPos, mPropWindowHSplitRatio,
+        mDisplayGamma, mExposureValue);
+
+    builder.Finish(fbSession);
+
+    std::ofstream outfile(filepath.c_str(), std::ios::binary | std::ios::out);
+
+    if (outfile.is_open()) {
+        outfile.write(reinterpret_cast<char*>(builder.GetBufferPointer()), builder.GetSize());
+    } else {
+        ImGui::OpenPopup(kSystemErrorDlgTitle);
+        mSystemErrorMsg = "Failed to save session file.";
+        LOGE(mSystemErrorMsg);
+    }
 }
 
 }  // namespace baktsiu

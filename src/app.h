@@ -106,6 +106,7 @@ public:
     static const char* kImagePropWindowName;
     static const char* kImageRemoveDlgTitle;
     static const char* kClearImagesDlgTitle;
+    static const char* kSystemErrorDlgTitle;
 
 public:
     bool    initialize(const char* title, int width, int height);
@@ -236,6 +237,7 @@ private:
     Shader          mStatisticsShader;
     GLuint          mTexHistogram;
     Sampler         mPointSampler;
+    std::string     mSystemErrorMsg;
 
     std::array<int, 768> mHistogram;
 
