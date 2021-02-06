@@ -416,7 +416,7 @@ float getRGBValueMatte(vec2 uv, vec3 color)
     for (int i = 0; i <= colIdx; ++i) {
         int isFraction = int(i > exponent);
         float y = pow(10.0, exponent - i + isFraction);
-        digitIdx = int(max(0, floor(value / y)));
+        digitIdx = int(max(0, floor(value / y))) % 10;
         value -= digitIdx * y;
     }
 
