@@ -91,7 +91,7 @@ bool Texture::loadFromFile(const std::string& filepath)
 
         file.setFrameBuffer((Imf::Rgba*)buffer - dw.min.x - dw.min.y * mWidth, 1, mWidth);
         file.readPixels(dw.min.y, dw.max.y);
-        
+
         mPixelDataType = GL_HALF_FLOAT;
         mImageFormat = GL_RGBA16F;
     }
@@ -186,7 +186,7 @@ bool    RenderTexture::bindAsOutput(const Vec2i& size, GLenum imageFormat)
         glBindFramebuffer(GL_FRAMEBUFFER, mFboId);
         return true;
     }
-    
+
     if (mTexId == 0) {
         glGenTextures(1, &mTexId);
     }
@@ -202,7 +202,7 @@ bool    RenderTexture::bindAsOutput(const Vec2i& size, GLenum imageFormat)
     if (mFboId == 0) {
         glGenFramebuffers(1, &mFboId);
     }
-    
+
     glBindFramebuffer(GL_FRAMEBUFFER, mFboId);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mTexId, 0);
 
@@ -247,6 +247,18 @@ void    RenderTexture::unbind()
 {
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+Vec4f   RenderTexture::getTexelColor(const Vec2f& pos) const
+{
+    Vec4f result(0.0f);
+
+    if (mTexId > 0) {
+        glGetTextureSubImage(mTexId, 0, static_cast<GLint>(pos.x), static_cast<GLint>(pos.y),
+            0, 1, 1, 1, GL_RGBA, GL_FLOAT, sizeof(result), &result[0]);
+    }
+
+    return result;
 }
 
 //-----------------------------------------------------------------------------

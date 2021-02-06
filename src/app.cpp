@@ -55,7 +55,7 @@ bool endsWith(const std::string& str, const std::string& token)
 }
 
 void APIENTRY glDebugOutput(GLenum source, GLenum type, GLuint id, GLenum severity,
-    GLsizei length, const GLchar *message, void *userParam)
+    GLsizei length, const GLchar *message, const void *userParam)
 {
     // Ignore non-significant error/warning codes
     if (id == 131169 || id == 131185 || id == 131218 || id == 131204 || id == 131184) return;
@@ -615,7 +615,6 @@ void App::run(CompositeFlags initFlags)
         ImGui::NewFrame();
 
         initToolbar();
-        initFooter();
         initImagePropWindow();
 
         ImGuiIO& io = ImGui::GetIO();
@@ -658,8 +657,6 @@ void App::run(CompositeFlags initFlags)
         io.MouseDrawCursor = (ImGui::GetMouseCursor() == ImGuiMouseCursor_ResizeAll);
 
         //ImGui::ShowDemoWindow();
-
-        ImGui::Render();
 
         if (topImage && topImage->texId() != 0) {
             gradingTexImage(*topImage, mTopImageRenderTexIdx);
@@ -735,6 +732,13 @@ void App::run(CompositeFlags initFlags)
         mPresentShader.setUniform("uFontImage", 2);
 
         mPresentShader.drawTriangle();
+
+        // Since fetching graded texel in initFooter() will potentially drain the render pipeline and
+        // cause CPU blocked. In order to reduce pipeline bubbles, we put the texel fetch at the very
+        // end of frame rendering.
+        initFooter();
+
+        ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(mWindow);
@@ -1552,11 +1556,15 @@ void App::initFooter()
         ImGui::SameLine(g.Style.FramePadding.x + g.FontSize * 4.0f);
         ImGui::Text("| %.0f x %.0f", imageSize.x, imageSize.y);
 
-        Vec2f imageCoords;
-        if (getImageCoordinates(g.IO.MousePos, imageCoords)) {
+        Vec2f pixelCoords;
+        Vec4f pixelColor;
+        if (getPixelCoordsAndColor(g.IO.MousePos, pixelCoords, pixelColor)) {
             ImGui::SameLine();
-            imageCoords.y = imageSize.y - imageCoords.y - 1;
-            ImGui::Text("(%.0f, %.0f)", imageCoords.x, imageCoords.y);
+            pixelCoords.y = imageSize.y - pixelCoords.y - 1;
+            ImGui::Text("(%.0f, %.0f)", pixelCoords.x, pixelCoords.y);
+
+            ImGui::SameLine();
+            ImGui::Text("(%.3f, %.3f, %.3f, %.3f)", pixelColor.r, pixelColor.g, pixelColor.b, pixelColor.a);
         }
     }
 
@@ -1605,7 +1613,7 @@ void    App::showImageProperties()
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 2.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, Vec2f(4.0f, 0.0f));
     ImGui::PushItemWidth(-1);
-  
+
     const char* colorPrimaryLabel = getPropertyLabel(topImage->getColorPrimaryType());
     if (ImGui::BeginCombo("##ColorPrimaryMenu", colorPrimaryLabel)) {
         for (auto type : colorPrimaryTypes) {
@@ -2117,25 +2125,32 @@ void    App::resetImageTransform(const Vec2f &imgSize, bool fitWindow)
     mColumnViews[1].reset(fitWindow);
 }
 
-bool App::getImageCoordinates(Vec2f viewportCoords, Vec2f& outImageCoords) const
+bool App::getPixelCoordsAndColor(Vec2f viewportCoords, Vec2f& outCoords, Vec4f& outColor) const
 {
-    viewportCoords.y = ImGui::GetIO().DisplaySize.y - viewportCoords.y;
+    const auto& io = ImGui::GetIO();
+    viewportCoords.y = io.DisplaySize.y - viewportCoords.y;
+
+    const float leftColumnWidth = glm::round(io.DisplaySize.x * mViewSplitPos);
+    const bool isInLeftColumn = viewportCoords.x <= leftColumnWidth;
 
     bool isOutsideImage = false;
     if (!inSideBySideMode()) {
-        outImageCoords = mView.getImageCoords(viewportCoords, &isOutsideImage);
+        outCoords = mView.getImageCoords(viewportCoords, &isOutsideImage);
     } else {
-        auto& io = ImGui::GetIO();
-        const float leftColumnWidth = glm::round(io.DisplaySize.x * mViewSplitPos);
-        if (viewportCoords.x > leftColumnWidth) {
-            viewportCoords.x -= leftColumnWidth;
-            outImageCoords = mColumnViews[1].getImageCoords(viewportCoords, &isOutsideImage);
+        if (isInLeftColumn) {
+            outCoords = mColumnViews[0].getImageCoords(viewportCoords, &isOutsideImage);
         } else {
-            outImageCoords = mColumnViews[0].getImageCoords(viewportCoords, &isOutsideImage);
+            viewportCoords.x -= leftColumnWidth;
+            outCoords = mColumnViews[1].getImageCoords(viewportCoords, &isOutsideImage);
         }
     }
 
-    outImageCoords = glm::floor(outImageCoords);
+    outCoords = glm::floor(outCoords);
+
+    if (!isOutsideImage) {
+        int sampleTexIndex = inCompareMode() && !isInLeftColumn ? (mTopImageRenderTexIdx ^ 1) : mTopImageRenderTexIdx;
+        outColor = mRenderTextures[sampleTexIndex].getTexelColor(outCoords);
+    }
 
     return !isOutsideImage;
 }

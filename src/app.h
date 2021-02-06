@@ -174,8 +174,8 @@ private:
     // Synchronize local offset of column views.
     void    syncSideBySideView(const ImGuiIO& io);
 
-    // Return pixel coordinates from mouse position.
-    bool    getImageCoordinates(Vec2f viewportCoords, Vec2f& outImageCoords) const;
+    // Return pixel coordinates and color from mouse position.
+    bool    getPixelCoordsAndColor(Vec2f viewportCoords, Vec2f& outCoords, Vec4f& outColor) const;
 
     void    appendAction(Action&& action);
 

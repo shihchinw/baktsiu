@@ -97,12 +97,14 @@ public:
 
     void    bindAsInput(bool useLinearFilter);
 
+    void    unbind();
+
     // Return id of output texture.
     GLuint  id() const { return mTexId; }
 
     Vec2i   size() const { return mSize; }
 
-    void    unbind();
+    Vec4f   getTexelColor(const Vec2f& pos) const;
 
 private:
     Vec2i   mSize;
@@ -110,7 +112,6 @@ private:
     GLuint  mRboId = 0;
     GLuint  mTexId = 0;
     GLenum  mImageFormat;
-    GLenum  mPixelDataType;
     bool    mUseLinearFilter = true;
 };
 
@@ -120,7 +121,7 @@ class Sampler
 {
 public:
     bool    initialize(GLenum minFilter, GLenum magFilter);
-    
+
     void    release();
 
     void    bind(GLuint);
