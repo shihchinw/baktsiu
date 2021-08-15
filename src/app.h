@@ -15,6 +15,7 @@
 #include <mutex>
 #include <vector>
 
+struct  GLFWmonitor;
 struct  GLFWwindow;
 struct  ImFont;
 struct  ImGuiIO;
@@ -94,6 +95,37 @@ enum class PixelMarkerFlags : char
 
 ENUM_CLASS_OPERATORS(PixelMarkerFlags);
 
+class App;
+
+// The class of glfw window functionalities.
+class Window
+{
+public:
+    bool        initialize(int width, int height, const char* title, App* app);
+
+    void        destroy();
+
+    // Get DPI scale value from the monitor with largest window area coverage.
+    void        getDpiScale(float* xscale, float* yscale);
+
+    // Callback when window is moved to another monitor.
+    void        onDpiScaled(float xscale, float yscale);
+
+    // Update window size with corresponding DPI scale.
+    void        adaptToMonitorDPI();
+
+    GLFWwindow* handle();
+
+private:
+    GLFWmonitor*    mMonitor = nullptr;
+    GLFWwindow*     mWindow = nullptr;
+
+    int     mWidth = 0;
+    int     mHeight = 0;
+    float   mScaleX = 1.0f;
+    float   mScaleY = 1.0f;
+    bool    mHasToResize = false;
+};
 
 // The class of viewer functionalities.
 //
@@ -118,6 +150,12 @@ public:
     void    run(CompositeFlags initFlags = CompositeFlags::Top);
 
     void    release();
+
+    // Callback when dropping file path list.
+    void    onFileDropped(int count, const char* filepaths[]);
+
+    // Callback when window is moved to another monitor with different DPI scale.
+    void    onWindowDpiScaled(float xscale, float yscale);
 
 private:
     void    setThemeColors();
@@ -189,8 +227,6 @@ private:
 
     void    processTextureUploadTasks();
 
-    void    onFileDrop(int count, const char* filepaths[]);
-
     // Open compare session.
     void    openSession(const std::string& filepath);
 
@@ -222,7 +258,7 @@ private:
     Action                      mCurAction;
     TexturePool                 mTexturePool;
 
-    GLFWwindow*     mWindow = nullptr;
+    Window          mWindow;
     ImFont*         mSmallFont = nullptr;
     ImFont*         mSmallIconFont = nullptr;
     GLuint          mFontTexture = 0;
@@ -248,6 +284,7 @@ private:
     // Image transformation
     View        mView;
     View        mColumnViews[2];    // Views for side by side mode.
+    float       mDpiScale = 1.0f;
     float       mImageScale = 1.0f;
     float       mPrevImageScale = -1.0f;
 

@@ -95,6 +95,40 @@ void APIENTRY glDebugOutput(GLenum source, GLenum type, GLuint id, GLenum severi
     LOGW("{} {} No.{} ({}):\n{}", sourceDesc, typeDesc, id, severityDesc, message);
 }
 
+// Return the monitor with largest window area converage.
+GLFWmonitor* glfwGetCurrentMonitor(GLFWwindow* window)
+{
+    int wx, wy, ww, wh;
+    glfwGetWindowPos(window, &wx, &wy);
+    glfwGetWindowSize(window, &ww, &wh);
+   
+    int monitorCount = 0;
+    GLFWmonitor** monitorList = glfwGetMonitors(&monitorCount);
+    GLFWmonitor* bestMonitor = nullptr;
+
+    int maxCoverage = -1;
+    int mx, my;
+
+    for (int i = 0; i < monitorCount; ++i) {
+        glfwGetMonitorPos(monitorList[i], &mx, &my);
+        
+        const GLFWvidmode* mode = glfwGetVideoMode(monitorList[i]);
+        const int mw = mode->width;
+        const int mh = mode->height;
+
+        int coverage = std::max(0, std::min(wx + ww, mx + mw) - std::max(wx, mx))
+                     * std::max(0, std::min(wy + wh, my + mh) - std::max(wy, my));
+
+        if (maxCoverage < coverage) {
+            maxCoverage = coverage;
+            bestMonitor = monitorList[i];
+        }
+    }
+
+    return bestMonitor;
+}
+
+
 // See more implementations about toggle button https://github.com/ocornut/imgui/issues/1537
 bool ToggleButton(const char* label, bool* value, const ImVec2 &size = ImVec2(0, 0), bool enable = true)
 {
@@ -313,6 +347,90 @@ void showErrorDialog(const char* title, const char* message)
     ImGui::PopStyleColor(4);
 }
 
+//-----------------------------------------------------------------------------
+
+bool    Window::initialize(int width, int height, const char* title, App* app)
+{
+    // Create window with graphics context
+    mWindow = glfwCreateWindow(width, height, title, nullptr, nullptr);
+    if (mWindow == nullptr) {
+        return false;
+    }
+
+    mWidth = width;
+    mHeight = height;
+
+    glfwSetWindowUserPointer(mWindow, app);
+    glfwSetWindowContentScaleCallback(mWindow, [](GLFWwindow* window, float xscale, float yscale) {
+        App* self = static_cast<App*>(glfwGetWindowUserPointer(window));
+        self->onWindowDpiScaled(xscale, yscale);
+    });
+
+    glfwSetDropCallback(mWindow, [](GLFWwindow* window, int count, const char* paths[]) {
+        App* self = static_cast<App*>(glfwGetWindowUserPointer(window));
+        self->onFileDropped(count, paths);
+    });
+
+    GLFWimage images[1];
+    // Icon is converted to byte array in pre-build stage. It's content is defined in resources.cpp.
+    images[0].pixels = stbi_load_from_memory(title_bar_icon_png, title_bar_icon_png_size, &images[0].width, &images[0].height, nullptr, 0);
+    glfwSetWindowIcon(mWindow, 1, images);
+    glfwMakeContextCurrent(mWindow);
+    glfwSwapInterval(1); // Enable vsync
+
+    return true;
+}
+
+void    Window::destroy()
+{
+    glfwDestroyWindow(mWindow);
+    mWindow = nullptr;
+    mMonitor = nullptr;
+}
+
+void    Window::getDpiScale(float* xscale, float* yscale)
+{
+    GLFWmonitor* monitor = glfwGetCurrentMonitor(mWindow);
+    glfwGetMonitorContentScale(monitor, xscale, yscale);
+}
+
+void    Window::onDpiScaled(float xscale, float yscale)
+{
+    GLFWmonitor* monitor = glfwGetCurrentMonitor(mWindow);
+    if (monitor == mMonitor) {
+        return;
+    }
+
+    mMonitor = monitor;
+
+    int width = 0;
+    int height = 0;
+    glfwGetWindowSize(mWindow, &width, &height);
+
+    mWidth = static_cast<int>(width * xscale / mScaleX);
+    mHeight = static_cast<int>(height * yscale / mScaleY);
+    mScaleX = xscale;
+    mScaleY = yscale;
+
+    // We can't set window size here directly, we have to update the size after leaving this callback.
+    //glfwSetWindowSize(mWindow, mWindowWidth, mWindowHeight);
+    mHasToResize = true;
+}
+
+void    Window::adaptToMonitorDPI()
+{
+    if (mHasToResize) {
+        glfwSetWindowSize(mWindow, mWidth, mHeight);
+        mHasToResize = false;
+    }
+}
+
+GLFWwindow* Window::handle()
+{
+    return mWindow;
+}
+
+//-----------------------------------------------------------------------------
 
 void    App::setThemeColors()
 {
@@ -361,7 +479,7 @@ bool App::initialize(const char* title, int width, int height)
 
     glfwSetErrorCallback([](int error, const char* description) {
         LOGW("GLFW error {}: {}", error, description);
-    });
+        });
 
     if (!glfwInit()) {
         LOGE("Failed to initialize glfw");
@@ -391,24 +509,10 @@ bool App::initialize(const char* title, int width, int height)
     glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
 #endif
 
-    // Create window with graphics context
-    mWindow = glfwCreateWindow(width, height, title, nullptr, nullptr);
-    if (mWindow == nullptr) {
+    if (!mWindow.initialize(width, height, title, this)) {
+        LOGE("Failed to initialize window");
         return false;
     }
-
-    glfwSetWindowUserPointer(mWindow, this);
-    glfwSetDropCallback(mWindow, [](GLFWwindow* window, int count, const char* paths[]) {
-        App* self = static_cast<App*>(glfwGetWindowUserPointer(window));
-        self->onFileDrop(count, paths);
-    });
-
-    GLFWimage images[1];
-    // Icon is converted to byte array in pre-build stage. It's content is defined in resources.cpp.
-    images[0].pixels = stbi_load_from_memory(title_bar_icon_png, title_bar_icon_png_size, &images[0].width, &images[0].height, nullptr, 0);
-    glfwSetWindowIcon(mWindow, 1, images);
-    glfwMakeContextCurrent(mWindow);
-    glfwSwapInterval(1); // Enable vsync
 
     // Initialize OpenGL loader
     if (gl3wInit() != 0) {
@@ -421,9 +525,9 @@ bool App::initialize(const char* title, int width, int height)
 
 #ifdef _DEBUG
     // Check output frame buffer has no gamma color encoding, since we done it in our shader of image presentation.
-    GLint encoding;
+    /*GLint encoding;
     glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_FRONT_LEFT, GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING, &encoding);
-    assert(encoding == GL_LINEAR);
+    assert(encoding == GL_LINEAR);*/
 
     GLint flags;
     glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
@@ -446,15 +550,13 @@ bool App::initialize(const char* title, int width, int height)
 
     setThemeColors();
 
-    ImGui_ImplGlfw_InitForOpenGL(mWindow, true);
+    ImGui_ImplGlfw_InitForOpenGL(mWindow.handle(), true);
     ImGui_ImplOpenGL3_Init(glsl_version);
 
-    mToolbarHeight = 32.0f;
-    mFooterHeight = 20.0f;
-    Vec4f padding(mToolbarHeight, 0.0f, mFooterHeight, 0.0f);
-    mView.setViewportPadding(padding);
-    mColumnViews[0].setViewportPadding(padding);
-    mColumnViews[1].setViewportPadding(padding);
+    float xscale = 1.0f;
+    float yscale = 1.0f;
+    mWindow.getDpiScale(&xscale, &yscale);
+    onWindowDpiScaled(xscale, yscale);
 
     // Fonts are converted into data arrays in pre-built stage. It uses bin2c.cmake to convert
     // resources/fonts/*.ttf into corresponding data arrays. Here we simply add fonts from
@@ -555,7 +657,7 @@ void App::release()
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 
-    glfwDestroyWindow(mWindow);
+    mWindow.destroy();
     glfwTerminate();
 }
 
@@ -604,10 +706,12 @@ void App::run(CompositeFlags initFlags)
         mCompositeFlags = initFlags;
     }
 
-    while (!glfwWindowShouldClose(mWindow)) {
+    while (!glfwWindowShouldClose(mWindow.handle())) {
         glfwPollEvents();
 
         processTextureUploadTasks();
+
+        mWindow.adaptToMonitorDPI();
 
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
@@ -741,7 +845,7 @@ void App::run(CompositeFlags initFlags)
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-        glfwSwapBuffers(mWindow);
+        glfwSwapBuffers(mWindow.handle());
     }
 
     mTexturePool.release();
@@ -799,6 +903,25 @@ void    App::computeImageStatistics(const RenderTexture& texture, float valueSca
     /*glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT);
     glBindTexture(GL_TEXTURE_2D, mTexHistogram);
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RED_INTEGER, GL_INT, (void*)mHistogram.data());*/
+}
+
+void    App::onWindowDpiScaled(float xscale, float yscale)
+{
+    mWindow.onDpiScaled(xscale, yscale);
+    
+    float newDpiScale = std::min(xscale, yscale);
+    float relativeScale = newDpiScale / mDpiScale;
+    mDpiScale = newDpiScale;
+
+    ImGui::GetStyle().ScaleAllSizes(relativeScale);
+    ImGui::GetIO().FontGlobalScale = mDpiScale;
+    
+    mToolbarHeight = 32.0f * mDpiScale;
+    mFooterHeight = 20.0f * mDpiScale;
+    Vec4f padding(mToolbarHeight, 0.0f, mFooterHeight, 0.0f);
+    mView.setViewportPadding(padding);
+    mColumnViews[0].setViewportPadding(padding);
+    mColumnViews[1].setViewportPadding(padding);
 }
 
 void    App::onKeyPressed(const ImGuiIO& io)
@@ -966,14 +1089,13 @@ void    App::updateImageTransform(const ImGuiIO& io, bool useColumnView)
         mImageScale *= 0.5f;
     } else if (ImGui::IsKeyPressed(0x14E) || ImGui::IsKeyPressed(0x3D)) {
         mImageScale *= 2.0f;
-    }
-    else if (!io.KeyCtrl && ImGui::IsKeyPressed(0x5A) && mPrevImageScale < 0.0f && mImageScale < kSniperImageScale) {
+    } else if (!io.KeyCtrl && ImGui::IsKeyPressed(0x5A) // z
+        && mPrevImageScale < 0.0f && mImageScale < (kSniperImageScale * mDpiScale)) {
         isInSniperMode = true;
         scalePivot = fetchScalePivot(io, useColumnView, mViewSplitPos, mouseAtRightColumn);
         mPrevImageScale = mImageScale;
-        mImageScale = kSniperImageScale;
-    }
-    else if (io.KeyShift && ImGui::IsKeyPressed(0x046)) { // shift+f
+        mImageScale = kSniperImageScale * mDpiScale;
+    } else if (io.KeyShift && ImGui::IsKeyPressed(0x046)) { // shift+f
         resetImageTransform(topImage->size(), true);
         return;
     } else if (ImGui::IsKeyPressed(0x14B) || ImGui::IsKeyPressed(0x2F) || ImGui::IsKeyPressed(0x046)) { // '/' or 'f'
@@ -1072,7 +1194,7 @@ void    App::initToolbar()
 
     ImGui::Begin("toolbar", nullptr, ImGuiWindowFlags_NoDecoration);
 
-    const Vec2f buttonSize(26.0f);
+    const Vec2f buttonSize(26.0f * mDpiScale);
     const char* popupWindowName = "Home";
 
     if (ImGui::Button(ICON_FA_HOME, buttonSize)) {
@@ -1093,8 +1215,8 @@ void    App::initToolbar()
     }
     if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Export Session"); }
 
-    const float comboMenuWidth = 100.0f;
-    static float centeredToolItemWidth = 506.0f;
+    const float comboMenuWidth = 100.0f * mDpiScale;
+    static float centeredToolItemWidth = 506.0f * mDpiScale;
     ImGui::SameLine((g.IO.DisplaySize.x - centeredToolItemWidth) * 0.5f);
     float centeredToolBeginPos = g.CurrentWindow->DC.CursorPos.x;
     ToggleButton(ICON_FA_FEATHER, &mUseLinearFilter, buttonSize);
@@ -1118,7 +1240,7 @@ void    App::initToolbar()
     if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Side by Side View"); }
 
     ImGui::SameLine();
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, Vec2f(5.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, Vec2f(5.0f) * mDpiScale);
     ImGui::PushItemWidth(comboMenuWidth);
     const char* outTransformTypes[] = { "sRGB", "P3 D65", "BT.2020" };
     if (ImGui::BeginCombo("##OutputColorSpace", outTransformTypes[mOutTransformType]))
@@ -1140,14 +1262,14 @@ void    App::initToolbar()
     }
 
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(60.0f);
+    ImGui::SetNextItemWidth(60.0f * mDpiScale);
     ImGui::SliderFloat("##EV", &mExposureValue, -8.0f, 8.0f, "EV: %.1f");
     if (ImGui::IsItemClicked(1)) {
         mExposureValue = 0.0f;
     }
 
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(80.0f);
+    ImGui::SetNextItemWidth(80.0f * mDpiScale);
     ImGui::SliderFloat("##Gamma", &mDisplayGamma, 0.35f, 2.8f, "gamma: %.2f");
     if (ImGui::IsItemClicked(1)) {
         mDisplayGamma = 2.2f;
@@ -1353,7 +1475,7 @@ void App::initImagePropWindow()
     ImGui::EndChild();
 
     const float spacerHeight = 4.0f;
-    Vec2f buttonSize(20.0f);
+    Vec2f buttonSize(20.0f * mDpiScale);
     const float toolbarHeight = buttonSize.y + g.Style.FramePadding.y * 2.0f + g.Style.ItemSpacing.y;
     const float titleHeight = ImGui::GetFrameHeightWithSpacing() + spacerHeight;
     ImGui::Dummy(Vec2f(0.0f, spacerHeight));
@@ -1367,7 +1489,7 @@ void App::initImagePropWindow()
     char buf[bufSize];
     const int imageNum = static_cast<int>(mImageList.size());
     const float imageListWindowHeight = ImGui::GetWindowHeight() - g.Style.ItemInnerSpacing.y * 2.0f;
-    const float imageItemHeight = 24.0f;
+    const float imageItemHeight = 24.0f * mDpiScale;
     const bool enableCompareView = inCompareMode();
 
     static const Vec4f activeBorderColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -1459,7 +1581,7 @@ void App::initImagePropWindow()
         const GLuint texId = mImageList[i]->texId();
         if (texId != 0) {
             ImGui::SameLine(g.Style.ItemSpacing.x);
-            ImGui::Image((void*)(intptr_t)texId, Vec2f(28.0f, 22.0f), Vec2f(0.0f, 0.0f), Vec2f(1.0f, 1.0f),
+            ImGui::Image((void*)(intptr_t)texId, Vec2f(28.0f, 22.0f) * mDpiScale, Vec2f(0.0f, 0.0f), Vec2f(1.0f, 1.0f),
                 Vec4f(1.0f), mTopImageIndex == i ? activeBorderColor : borderColor);
         }
 
@@ -1672,8 +1794,8 @@ void    App::initHomeWindow(const char* name)
 {
     bool open = true;
 
-    ImGui::SetNextWindowContentWidth(500.0f);
-    if (ImGui::BeginPopupModal(name, &open, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
+    ImGui::SetNextWindowContentWidth(500.0f * mDpiScale);
+    if (ImGui::BeginPopupModal(name, &open, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
         //ImGui::Dummy(Vec2f(550.0f, ImGui::GetFrameHeight()));
         if (ImGui::BeginTabBar("ControlsBar", ImGuiTabBarFlags_None)) {
             if (ImGui::BeginTabItem("Controls")) {
@@ -2158,7 +2280,7 @@ bool App::getPixelCoordsAndColor(Vec2f viewportCoords, Vec2f& outCoords, Vec4f& 
 float App::getPropWindowWidth() const
 {
     ImGuiWindow* window = ImGui::FindWindowByName(kImagePropWindowName);
-    return window == nullptr ? 250.0f : window->Size.x;
+    return window == nullptr ? 250.0f * mDpiScale : window->Size.x;
 }
 
 int App::getPixelMarkerFlags() const
@@ -2206,7 +2328,7 @@ inline bool    App::shouldShowSplitter() const
     return inCompareMode() && (getPixelMarkerFlags() & static_cast<int>(PixelMarkerFlags::DiffMask)) == 0;
 }
 
-void    App::onFileDrop(int count, const char* filepaths[])
+void    App::onFileDropped(int count, const char* filepaths[])
 {
     std::vector<std::string> filepathArray;
     filepathArray.reserve(count);
