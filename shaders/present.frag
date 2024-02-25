@@ -25,6 +25,7 @@ uniform vec4    uCharUvXforms[11];
 uniform bool    uApplyToneMapping;
 uniform bool    uBlendWithImageAlpha;
 uniform bool    uEnablePixelHighlight;
+uniform bool    uEnablePixelBorder;
 
 in  vec2 vUV;
 out vec4 oColor;
@@ -430,6 +431,10 @@ float getRGBValueMatte(vec2 uv, vec3 color)
 
 bool showPixelBorder(vec2 wh, vec2 offset, float imageScale)
 {
+    if (!uEnablePixelBorder) {
+        return false;
+    }
+
     // vec2 xy = mod(wh - offset, imageScale);
     // return any(lessThan(xy, vec2(1.0))) && (imageScale > 5.0);
 
