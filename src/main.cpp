@@ -9,16 +9,17 @@ static const char USAGE[] =
 R"(Bak-Tsiu, examining every image details.
 
     Usage:
-      baktsiu
-      baktsiu [--split | --columns] <name>...
+      baktsiu [options]
+      baktsiu [options] [--split | --columns] [--] <name>...
       baktsiu (-h | --help)
       baktsiu --version
 
     Options:
+      --width=<n>   Set window width [default: 1280]
+      --height=<n>  Set window height [default: 720]
       -h --help     Show this screen.
       --version     Show version.
 )";
-
 
 int main(int argc, char** argv)
 {
@@ -45,7 +46,10 @@ int main(int argc, char** argv)
         = docopt::docopt(USAGE, argList, showHelpWhenRequest, "Bak-Tsiu v" VERSION);
     PopRangeMarker();
 
-    if (app.initialize(u8"目睭 Bak Tsiu", 1280, 720))
+    int width = args["--width"].asLong();
+    int height = args["--height"].asLong();
+
+    if (app.initialize(u8"目睭 Bak Tsiu", width, height))
     {
         if (args["<name>"]) {
             app.importImageFiles(args["<name>"].asStringList(), true);
