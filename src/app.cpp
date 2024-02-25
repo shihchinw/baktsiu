@@ -683,15 +683,26 @@ void App::processTextureUploadTasks()
         return;
     }
 
-    // When we finish importing images, we switch top image to the latest one.
     if (!isUndo && mTexturePool.hasNoPendingTasks()) {
+#if 0
+        // When we finish importing images, we switch top image to the latest one.
         mTopImageIndex = static_cast<int>(mImageList.size()) - 1;
         resetImageTransform(getTopImage()->size());
 
         if (mCmpImageIndex == -1 && mTopImageIndex >= 1) {
             mCmpImageIndex = 0;
         }
+#else
+        // When we finish importing images, we switch top image to the first one
+        // and compared image to the second one. This makes split and column
+        // comparisons follow the natural order of imported files.
+        mTopImageIndex = 0;
+        resetImageTransform(getTopImage()->size());
 
+        if (mCmpImageIndex == -1 && mImageList.size() > 1) {
+            mCmpImageIndex = 1;
+        }
+#endif
         mUpdateImageSelection = false;
     }
 }
