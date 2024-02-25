@@ -316,6 +316,7 @@ private:
     bool        mUseLinearFilter = true;
     bool        mBlendWithImageAlpha = true;
     bool        mShowImageNameOverlay = true;
+    bool        mEnablePixelBorder = true;
     bool        mShowPixelMarker = false;
     bool        mSupportComputeShader = false;
     bool        mUpdateImageSelection = false;
